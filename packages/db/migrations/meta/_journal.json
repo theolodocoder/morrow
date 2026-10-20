@@ -183,6 +183,13 @@
       "when": 1792531599369,
       "tag": "0025_backfill_publication_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792532129765,
+      "tag": "0026_alternate_publications",
+      "breakpoints": true
     }
   ]
 }

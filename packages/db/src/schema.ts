@@ -563,6 +563,47 @@ export const publications = pgTable(
   ],
 )
 
+/**
+ * Alternate versions readers can choose instead of main from a divergence point on. A separate table, not a flag
+ * on `publications`: everything that reads `publications` (feed, profiles, discovery…) must only ever see main.
+ */
+export const alternatePublications = pgTable(
+  'alternate_publications',
+  {
+    id: id(),
+    workId: uuid('work_id')
+      .notNull()
+      .references(() => works.id),
+    branchId: uuid('branch_id')
+      .notNull()
+      .references(() => branches.id),
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => chapters.id),
+    snapshotId: uuid('snapshot_id')
+      .notNull()
+      .references(() => documentSnapshots.id),
+    title: text('title').notNull(),
+    position: byteOrderedText('position').notNull(),
+    wordCount: integer('word_count').notNull(),
+    /** main's last shared chapter (its published position): where readers are offered this version */
+    afterPosition: byteOrderedText('after_position').notNull(),
+    publishedBy: text('published_by').notNull(),
+    publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+    credits: jsonb('credits')
+      .$type<{ userId: string; role: 'cowriter' | 'contributor' }[]>()
+      .notNull()
+      .default([]),
+    /** set when the alternate is republished or taken down (itself, its branch archived, or the work unpublished) */
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+  },
+  (t) => [
+    index('alternate_publications_live_idx')
+      .on(t.workId, t.branchId, t.position)
+      .where(sql`${t.supersededAt} is null`),
+  ],
+)
+
 // ---- Proposals (PRD FR-014/015, architecture §9) ----
 export const proposalKind = pgEnum('proposal_kind', [
   'edit',

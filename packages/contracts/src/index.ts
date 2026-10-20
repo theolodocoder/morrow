@@ -616,6 +616,19 @@ export const PublicationStatus = z.object({
 })
 export type PublicationStatus = z.infer<typeof PublicationStatus>
 
+/** A branch published (or publishable) as an alternate version beside the main story. */
+export const AlternateStatus = z.object({
+  branchId: z.uuid(),
+  name: z.string(),
+  published: z.boolean(),
+  chapterCount: z.number().int(),
+})
+export type AlternateStatus = z.infer<typeof AlternateStatus>
+export const PublishAlternateInput = z.object({
+  /** the owner's pick of the first chapter that differs, for a branch created without one */
+  divergesAtChapterId: id.optional(),
+})
+
 export const PublicChapterSummary = z.object({
   title: z.string(),
   slug: z.string(),

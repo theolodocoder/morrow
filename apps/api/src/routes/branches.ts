@@ -11,7 +11,15 @@ import {
   UpdateBranchInput,
   PROBLEM,
 } from '@morrow/contracts'
-import { branches, chapters, documentProjections, documents, user, type Database } from '@morrow/db'
+import {
+  alternatePublications,
+  branches,
+  chapters,
+  documentProjections,
+  documents,
+  user,
+  type Database,
+} from '@morrow/db'
 import { capabilitiesFor } from '@morrow/domain'
 import { toAccessContext } from '@morrow/db'
 import { SCHEMA_VERSION, workToMarkdown, type PMNode } from '@morrow/editor'
@@ -266,6 +274,16 @@ export const branchRoutes: FastifyPluginAsyncZod<{ db: Database; collab: CollabG
         .update(branches)
         .set({ archivedAt: sql`now()` })
         .where(eq(branches.id, access.branch.id))
+      // an archived direction is no longer offered to readers as an alternate version
+      await tx
+        .update(alternatePublications)
+        .set({ supersededAt: sql`now()` })
+        .where(
+          and(
+            eq(alternatePublications.branchId, access.branch.id),
+            isNull(alternatePublications.supersededAt),
+          ),
+        )
       await recordActivity(tx, {
         workId: access.work.id,
         actorId: userId,

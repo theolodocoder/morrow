@@ -23,6 +23,7 @@ import { memberRoutes, publicInvitationRoutes } from './routes/members.ts'
 import { branchRoutes } from './routes/branches.ts'
 import { profileRoutes, publicProfileRoutes } from './routes/profiles.ts'
 import { publicReadingRoutes, publishingRoutes } from './routes/publishing.ts'
+import { alternateRoutes } from './routes/alternates.ts'
 import { proposalRoutes } from './routes/proposals.ts'
 import { feedbackRoutes } from './routes/feedback.ts'
 import { compareRoutes } from './routes/compare.ts'
@@ -247,6 +248,7 @@ export async function buildApp({ env, db, collab, email, logger }: AppDeps) {
       await v1.register(branchRoutes, { db, collab })
       await v1.register(profileRoutes, { db })
       await v1.register(publishingRoutes, { db, collab })
+      await v1.register(alternateRoutes, { db, collab })
       await v1.register(proposalRoutes, { db, collab })
       await v1.register(feedbackRoutes, { db, collab })
       await v1.register(compareRoutes, { db, collab })

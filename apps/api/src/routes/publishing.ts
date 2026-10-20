@@ -11,7 +11,15 @@ import {
   PublicWork,
   PublishInput,
 } from '@morrow/contracts'
-import { branches, chapters, documentSnapshots, publications, works, type Database } from '@morrow/db'
+import {
+  alternatePublications,
+  branches,
+  chapters,
+  documentSnapshots,
+  publications,
+  works,
+  type Database,
+} from '@morrow/db'
 import { openingLine } from '@morrow/editor'
 import type { CollabGateway } from '../collab-gateway.ts'
 import { requireWork } from '../access.ts'
@@ -186,6 +194,11 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Col
           .update(publications)
           .set({ supersededAt: sql`now()` })
           .where(and(eq(publications.workId, work.id), isNull(publications.supersededAt)))
+        // alternates share main's opening, so they can't stay up without it
+        await tx
+          .update(alternatePublications)
+          .set({ supersededAt: sql`now()` })
+          .where(and(eq(alternatePublications.workId, work.id), isNull(alternatePublications.supersededAt)))
         await tx
           .update(works)
           .set({ publishedAt: null, updatedAt: sql`now()` })
