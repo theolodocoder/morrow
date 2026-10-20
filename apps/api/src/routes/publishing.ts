@@ -12,6 +12,7 @@ import {
   PublishInput,
 } from '@morrow/contracts'
 import { branches, chapters, documentSnapshots, publications, works, type Database } from '@morrow/db'
+import { openingLine } from '@morrow/editor'
 import type { CollabGateway } from '../collab-gateway.ts'
 import { requireWork } from '../access.ts'
 import { recordActivity } from '../activity.ts'
@@ -373,6 +374,13 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         .select({ content: documentSnapshots.contentJson })
         .from(documentSnapshots)
         .where(eq(documentSnapshots.id, p.snapshotId))
+      const following = pubs[index + 1]
+      const [nextSnap] = following
+        ? await db
+            .select({ content: documentSnapshots.contentJson })
+            .from(documentSnapshots)
+            .where(eq(documentSnapshots.id, following.snapshotId))
+        : []
       const cowriters = p.credits.filter((c) => c.role === 'cowriter').map((c) => c.userId)
       const people = await peopleByIds(db, [w.ownerId, ...cowriters])
       const summary = (x: (typeof pubs)[number] | undefined) =>
@@ -390,7 +398,7 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
             .sort((a, b) => a.displayName.localeCompare(b.displayName)),
         ],
         prev: summary(pubs[index - 1]),
-        next: summary(pubs[index + 1]),
+        next: following ? { ...summary(following)!, opening: openingLine(nextSnap?.content) } : null,
       }
     },
   )

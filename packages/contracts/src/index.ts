@@ -689,7 +689,8 @@ export const PublicChapter = z.object({
   /** the chapter's writers: the author, then its co-writers */
   credit: z.array(PublicPerson),
   prev: PublicChapterSummary.nullable(),
-  next: PublicChapterSummary.nullable(),
+  /** `opening` is the next chapter's first line, for the "Up next" card; null when it has no text */
+  next: PublicChapterSummary.extend({ opening: z.string().nullable() }).nullable(),
 })
 export type PublicChapter = z.infer<typeof PublicChapter>
 

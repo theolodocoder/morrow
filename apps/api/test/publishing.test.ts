@@ -289,6 +289,47 @@ describe('publishing and public reading (PRD FR-023)', () => {
     expect(await credit(0)).toEqual(['Ama'])
   })
 
+  it("the next chapter's opening line comes with the chapter", async () => {
+    const s = await creditScene()
+    await write(s.ch1.documentId, s.w.id, 'Chapter one.')
+    await write(s.ch2.documentId, s.w.id, 'It began, as these things do, with rain.')
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { chapters: { slug: string }[] }
+    const first = (await anon(`/works/${s.w.publicPath}/chapters/${page.chapters[0]!.slug}`)).json() as {
+      next: { title: string; opening: string | null } | null
+    }
+    expect(first.next).toMatchObject({ title: 'Second', opening: 'It began, as these things do, with rain.' })
+    const last = (await anon(`/works/${s.w.publicPath}/chapters/${page.chapters[1]!.slug}`)).json() as {
+      next: unknown
+    }
+    expect(last.next).toBeNull()
+  })
+
+  it('teaser is null for a chapter with no text', async () => {
+    const s = await creditScene()
+    await write(s.ch1.documentId, s.w.id, 'Chapter one.')
+    await ctx.db.db
+      .insert(documentProjections)
+      .values({
+        documentId: s.ch2.documentId,
+        workId: s.w.id,
+        contentJson: { type: 'doc', content: [{ type: 'paragraph' }, { type: 'sceneBreak' }] },
+        plainText: '',
+        wordCount: 0,
+        sourceRevision: Date.now(),
+      })
+      .onConflictDoUpdate({
+        target: documentProjections.documentId,
+        set: { contentJson: { type: 'doc', content: [{ type: 'paragraph' }, { type: 'sceneBreak' }] } },
+      })
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { chapters: { slug: string }[] }
+    const first = (await anon(`/works/${s.w.publicPath}/chapters/${page.chapters[0]!.slug}`)).json() as {
+      next: { opening: string | null }
+    }
+    expect(first.next.opening).toBeNull()
+  })
+
   it('a malformed or unknown public path is a plain 404', async () => {
     expect((await anon('/works/whatever')).statusCode).toBe(404)
     expect((await anon('/works/the-orchard-0000000000')).statusCode).toBe(404)
