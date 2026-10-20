@@ -5,6 +5,7 @@ export const routes = {
   profileSettings: '/app/settings/profile',
   accountSettings: '/app/settings/account',
   comics: '/comics',
+  classics: '/classics',
   notifications: '/app/notifications',
   notificationSettings: '/app/settings/notifications',
   planSettings: '/app/settings/plan',

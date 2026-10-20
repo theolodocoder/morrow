@@ -39,6 +39,7 @@ import { accountRoutes } from './routes/account.ts'
 import { waitlistRoutes } from './routes/waitlist.ts'
 import { writingRoutes } from './routes/writing.ts'
 import { pollRoutes, publicPollRoutes } from './routes/polls.ts'
+import { classicRoutes } from './routes/classics.ts'
 import { badgeRoutes } from './routes/badges.ts'
 import { dashboardRoutes } from './routes/dashboard.ts'
 import { loadRestriction, profiles } from '@morrow/db'
@@ -263,6 +264,7 @@ export async function buildApp({ env, db, collab, email, logger }: AppDeps) {
       await v1.register(waitlistRoutes, { db })
       await v1.register(writingRoutes, { db })
       await v1.register(pollRoutes, { db })
+      await v1.register(classicRoutes, { db, collab })
     },
     { prefix: '/api/v1' },
   )

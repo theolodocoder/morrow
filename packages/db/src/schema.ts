@@ -128,6 +128,11 @@ export const works = pgTable(
     readerCommentCount: integer('reader_comment_count').notNull().default(0),
     /** the writer's cover choice (palette, motif, layout); null = generated from the id. Validated as CoverConfig. */
     cover: jsonb('cover'),
+    /**
+     * Classics (P-063): where a public-domain work came from, e.g. { kind: 'public_domain', originalAuthor, year }.
+     * Null for everything people write here.
+     */
+    source: jsonb('source'),
     /** a serial's release day (P-057): 0 = Sunday … 6 = Saturday; null = no schedule */
     releaseDay: integer('release_day'),
     /** open calls (P-058): roles the writer is looking for, e.g. illustrator, editor */

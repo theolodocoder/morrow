@@ -25,7 +25,13 @@ export interface CollabGateway {
     reason?: 'branch_fork' | 'proposal_base'
   }): Promise<{ forkSnapshotId: string | null }>
   /** Start a document from a stored snapshot (a published version), keeping its Yjs lineage. */
-  forkSnapshot(input: { snapshotId: string; targetDocumentId: string; workId: string }): Promise<void>
+  /** `fromWorkId`: the snapshot's own work, when copying a public-domain classic into a retelling (P-063) */
+  forkSnapshot(input: {
+    snapshotId: string
+    targetDocumentId: string
+    workId: string
+    fromWorkId?: string
+  }): Promise<void>
   /** Restore a snapshot as a forward change; returns the snapshot of what was replaced. */
   restoreDocument(input: {
     documentId: string

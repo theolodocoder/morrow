@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "staff": "node --env-file=../../.env --import tsx src/cli/staff.ts",
-    "load-test": "node --env-file=../../.env --import tsx src/cli/load-test.ts"
+    "load-test": "node --env-file=../../.env --import tsx src/cli/load-test.ts",
+    "import-classics": "node --env-file=../../.env --import tsx src/cli/import-classics.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.10",
@@ -23,6 +24,7 @@
     "fastify": "^5.12.7",
     "fastify-type-provider-zod": "^7.0.0",
     "fractional-indexing": "^4.0.0",
+    "node-html-parser": "^7.1.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

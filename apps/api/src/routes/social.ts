@@ -114,7 +114,8 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
     // Signed out, "For you" has no one to be for: it's Popular.
     const ranked = sort === 'popular' || sort === 'for_you'
 
-    const where: SQL[] = [findable]
+    // the feed is what people write here; classics live on their own shelf (P-063)
+    const where: SQL[] = [findable, sql`w.source is null`]
     if (category) where.push(sql`w.form = ${category}`)
     if (me) {
       const blocked = [...(await blockedSet(db, me))]

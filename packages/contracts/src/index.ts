@@ -621,8 +621,11 @@ export const PublicChapterSummary = z.object({
   slug: z.string(),
   wordCount: z.number().int(),
 })
+/** A public-domain classic (P-063): who really wrote it, and when. */
+export const ClassicInfo = z.object({ author: z.string(), year: z.number().int() })
 export const PublicWork = z.object({
   cover: CoverConfig,
+  classic: ClassicInfo.nullable(),
   releaseDay: ReleaseDay.nullable(),
   openRoles: OpenRoles,
   /** anyone signed in may suggest edits (public participation) */
@@ -975,6 +978,7 @@ export type ReadingList = z.infer<typeof ReadingList>
 export const DiscoveryWork = z.object({
   title: z.string(),
   cover: CoverConfig,
+  classic: z.object({ author: z.string(), year: z.number().int() }).optional(),
   openRoles: z.array(z.string()).optional(),
   description: z.string(),
   category: z.enum(WORK_CATEGORIES),
@@ -1000,6 +1004,8 @@ export const Discovery = z.object({
   seekingContributors: z.array(DiscoveryWork),
   /** open calls (P-058): works whose writers are looking for someone */
   openCalls: z.array(DiscoveryWork),
+  /** public-domain classics (P-063) */
+  classics: z.array(DiscoveryWork),
   topics: z.array(z.object({ tag: z.string(), works: z.number().int() })),
 })
 export type Discovery = z.infer<typeof Discovery>

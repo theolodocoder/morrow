@@ -9,6 +9,7 @@ import { Avatar } from '@/components/profile/avatar'
 import { WorkActions } from '@/components/public/work-actions'
 import { ReaderComments } from '@/components/public/reader-comments'
 import { ContributeButton } from '@/components/public/contribute'
+import { RetellButton } from '@/components/public/retell-button'
 import { publicApi } from '@/lib/public-api'
 import { routes } from '@/lib/routes'
 import { CATEGORY_OPTIONS, LICENSE_OPTIONS, labelOf } from '@/lib/work-options'
@@ -53,37 +54,46 @@ export default async function PublicWorkPage({ params }: Params) {
             <h1 className="mt-1.5 font-display text-[36px] leading-[1.05] text-primary sm:text-[48px]">
               {w.title}
             </h1>
-            <ul aria-label="Written by" className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-              {people.map((p, i) => {
-                const inner = (
-                  <>
-                    <Avatar
-                      name={p.displayName}
-                      seed={p.avatarSeed}
-                      avatar={p.avatar}
-                      badge={p.badge}
-                      size={30}
-                    />
-                    <span className="text-[14px] text-primary">{p.displayName}</span>
-                    {i > 0 && <span className="sr-only">(collaborator)</span>}
-                  </>
-                )
-                return (
-                  <li key={`${p.displayName}${i}`}>
-                    {p.username ? (
-                      <Link
-                        href={routes.author(p.username)}
-                        className="inline-flex items-center gap-2 rounded-full pr-1 hover:underline"
-                      >
-                        {inner}
-                      </Link>
-                    ) : (
-                      <span className="inline-flex items-center gap-2">{inner}</span>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
+            {w.classic ? (
+              <p className="mt-3 text-[15px] text-secondary">
+                by <span className="font-medium text-primary">{w.classic.author}</span> · {w.classic.year} ·{' '}
+                <span className="rounded-full bg-selected px-2 py-0.5 text-[12px] text-primary">
+                  Public domain
+                </span>
+              </p>
+            ) : (
+              <ul aria-label="Written by" className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {people.map((p, i) => {
+                  const inner = (
+                    <>
+                      <Avatar
+                        name={p.displayName}
+                        seed={p.avatarSeed}
+                        avatar={p.avatar}
+                        badge={p.badge}
+                        size={30}
+                      />
+                      <span className="text-[14px] text-primary">{p.displayName}</span>
+                      {i > 0 && <span className="sr-only">(collaborator)</span>}
+                    </>
+                  )
+                  return (
+                    <li key={`${p.displayName}${i}`}>
+                      {p.username ? (
+                        <Link
+                          href={routes.author(p.username)}
+                          className="inline-flex items-center gap-2 rounded-full pr-1 hover:underline"
+                        >
+                          {inner}
+                        </Link>
+                      ) : (
+                        <span className="inline-flex items-center gap-2">{inner}</span>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
           </div>
         </div>
 
@@ -108,12 +118,16 @@ export default async function PublicWorkPage({ params }: Params) {
             </Link>
           )}
           <ContinueReading publicPath={w.publicPath} chapters={w.chapters} />
-          <ContributeButton
-            publicPath={w.publicPath}
-            title={w.title}
-            authorName={w.author.displayName.split(' ')[0]!}
-            chapters={w.chapters}
-          />
+          {w.classic ? (
+            <RetellButton publicPath={w.publicPath} />
+          ) : (
+            <ContributeButton
+              publicPath={w.publicPath}
+              title={w.title}
+              authorName={w.author.displayName.split(' ')[0]!}
+              chapters={w.chapters}
+            />
+          )}
         </div>
         {(w.releaseDay !== null || w.openRoles.length > 0) && !w.completed && (
           <div className="mt-4 flex flex-col gap-2">

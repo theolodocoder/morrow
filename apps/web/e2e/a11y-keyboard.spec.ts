@@ -20,6 +20,8 @@ test('keyboard only: skip link, visible focus, sign up and start writing without
     return cs.outlineStyle !== 'none' || cs.boxShadow !== 'none'
   })
   expect(ring).toBe(true)
+  // the form is disabled until the page is interactive (typing before then would be lost)
+  await expect(page.getByLabel('Name')).toBeEnabled()
   await page.getByLabel('Name').focus()
   await page.keyboard.type('Ama Owusu')
   await page.keyboard.press('Tab')

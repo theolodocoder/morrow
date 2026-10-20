@@ -202,6 +202,14 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Col
 }
 
 /** Resolve a public path to a work readers may see: published, not private, not deleted. Everything else is 404. */
+/** A classic's real author and year (P-063), from the work's stored source. */
+export function classicOf(source: unknown) {
+  const s = source as { kind?: string; originalAuthor?: unknown; year?: unknown } | null
+  return s?.kind === 'public_domain' && typeof s.originalAuthor === 'string'
+    ? { author: s.originalAuthor, year: Number(s.year) || 0 }
+    : null
+}
+
 export async function readableWork(db: Database, publicPath: string) {
   const publicId = publicPath.slice(publicPath.lastIndexOf('-') + 1)
   if (!/^[0-9a-f]{10}$/.test(publicId)) return null
@@ -298,6 +306,7 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         contributors: editors,
         completed: w.completedAt !== null,
         cover: coverOf(w.id, w.cover),
+        classic: classicOf(w.source),
         releaseDay: w.releaseDay,
         openRoles: w.openRoles as PublicWork['openRoles'],
         likes: w.likeCount,

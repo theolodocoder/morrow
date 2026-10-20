@@ -14,6 +14,7 @@ import {
   loadDocumentAccess,
   loadRestriction,
   toAccessContext,
+  works,
   type Database,
 } from '@morrow/db'
 import { and, eq, inArray } from 'drizzle-orm'
@@ -469,13 +470,26 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
         if (fromSnapshot && request.method === 'POST') {
           // Public participation (M6): an outside contributor's copy starts from the *published* version they read,
           // never the live draft. The snapshot's encoded state keeps Yjs lineage, so accepting works as usual.
-          const input = JSON.parse(body || '{}') as { targetDocumentId: string; workId: string }
+          const input = JSON.parse(body || '{}') as {
+            targetDocumentId: string
+            workId: string
+            fromWorkId?: string
+          }
           const [snapRow] = await db
             .select({ state: documentSnapshots.state, workId: documentSnapshots.workId })
             .from(documentSnapshots)
             .where(eq(documentSnapshots.id, fromSnapshot[1]!))
-          if (!snapRow || snapRow.workId !== input.workId)
-            return json(response, 404, { error: 'snapshot_not_found' })
+          // Copies stay within a work, with one exception: a public-domain classic may be copied into someone's
+          // retelling (P-063). Checked here too, not only by the API.
+          let allowed = !!snapRow && snapRow.workId === input.workId
+          if (snapRow && !allowed && input.fromWorkId === snapRow.workId) {
+            const [src] = await db
+              .select({ source: works.source })
+              .from(works)
+              .where(eq(works.id, snapRow.workId))
+            allowed = (src?.source as { kind?: string } | null)?.kind === 'public_domain'
+          }
+          if (!snapRow || !allowed) return json(response, 404, { error: 'snapshot_not_found' })
           const stored = await store.store(input.targetDocumentId, input.workId, snapRow.state)
           const copy = docFromState(stored.state)
           await store.writeProjection(input.targetDocumentId, input.workId, copy, stored.revision)

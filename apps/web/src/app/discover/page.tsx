@@ -356,6 +356,20 @@ export default async function DiscoverPage({ searchParams }: Params) {
           i={4}
         />
         <Shelf
+          id="classics"
+          title="Classics"
+          note={
+            <>
+              Public-domain books, free to read and free to retell.{' '}
+              <Link href={routes.classics} className="text-accent underline underline-offset-2">
+                See them all
+              </Link>
+            </>
+          }
+          works={d.classics}
+          i={4}
+        />
+        <Shelf
           id="open-calls"
           title="Looking for collaborators"
           note="Their writers want an editor, an illustrator, a co-writer… maybe you."
