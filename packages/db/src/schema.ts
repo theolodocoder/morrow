@@ -548,6 +548,11 @@ export const publications = pgTable(
     wordCount: integer('word_count').notNull(),
     publishedBy: text('published_by').notNull(),
     publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+    /** who wrote this chapter, fixed at publish time so later drafting never changes what readers see credited */
+    credits: jsonb('credits')
+      .$type<{ userId: string; role: 'cowriter' | 'contributor' }[]>()
+      .notNull()
+      .default([]),
     /** set when a newer publication replaces this one, or the work is unpublished */
     supersededAt: timestamp('superseded_at', { withTimezone: true }),
   },

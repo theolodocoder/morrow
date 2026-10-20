@@ -1,6 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { activityEvents, documentProjections, editSessions, profiles, workMembers } from '@morrow/db'
+import {
+  activityEvents,
+  documentProjections,
+  editSessions,
+  profiles,
+  proposals,
+  workMembers,
+} from '@morrow/db'
 import { setup, signUp } from './setup.ts'
 
 let ctx: Awaited<ReturnType<typeof setup>>
@@ -42,6 +49,34 @@ async function write(documentId: string, workId: string, text: string) {
     .onConflictDoUpdate({ target: documentProjections.documentId, set: v })
 }
 const anon = (path: string) => ctx.app.inject({ method: 'GET', url: `/api/v1/public${path}` })
+
+/** A two-chapter work with two editor members, Kemi and Tolu. */
+async function creditScene() {
+  const owner = await signUp(ctx.app)
+  const w = await work(owner)
+  await owner.call('POST', `/api/v1/works/${w.id}/chapters`, { title: 'Second' })
+  const [ch1, ch2] = await chaptersOf(owner, w.id)
+  const kemi = await signUp(ctx.app, 'Kemi')
+  const tolu = await signUp(ctx.app, 'Tolu')
+  await ctx.db.db
+    .insert(workMembers)
+    .values(
+      [kemi, tolu].map((u) => ({ workId: w.id, userId: u.id, role: 'editor' as const, grantedBy: owner.id })),
+    )
+  return { owner, w, ch1: ch1!, ch2: ch2!, kemi, tolu }
+}
+async function sessions(s: { w: Work }, userId: string, chapter: { documentId: string }, counts: number[]) {
+  await ctx.db.db.insert(editSessions).values(
+    counts.map((updateCount) => ({
+      documentId: chapter.documentId,
+      workId: s.w.id,
+      userId,
+      startedAt: new Date(),
+      endedAt: new Date(),
+      updateCount,
+    })),
+  )
+}
 
 describe('publishing and public reading (PRD FR-023)', () => {
   it('a private work cannot be published, and nothing about it is readable', async () => {
@@ -138,7 +173,7 @@ describe('publishing and public reading (PRD FR-023)', () => {
       userId: editor.id,
       startedAt: new Date(),
       endedAt: new Date(),
-      updateCount: 3,
+      updateCount: 21,
     })
     await ctx.db.db
       .insert(profiles)
@@ -151,6 +186,60 @@ describe('publishing and public reading (PRD FR-023)', () => {
       published: true,
       chapterCount: 1,
     })
+  })
+
+  it('credits a co-writer per chapter only past 20 edits made before publishing', async () => {
+    const s = await creditScene()
+    await sessions(s, s.kemi.id, s.ch2, [15, 10])
+    await sessions(s, s.tolu.id, s.ch1, [5])
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const expected = [
+      { role: 'author', person: { displayName: 'Ama' }, chapters: [] },
+      { role: 'cowriter', person: { displayName: 'Kemi' }, chapters: [2] },
+    ]
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { credits: unknown[] }
+    expect(page.credits).toMatchObject(expected)
+    expect(page.credits).toHaveLength(2)
+
+    // drafting after publishing never changes what the publication credits
+    await sessions(s, s.tolu.id, s.ch1, [30])
+    const again = (await anon(`/works/${s.w.publicPath}`)).json() as { credits: unknown[] }
+    expect(again.credits).toMatchObject(expected)
+    expect(again.credits).toHaveLength(2)
+  })
+
+  it('credits accepted-proposal authors as contributors', async () => {
+    const s = await creditScene()
+    await ctx.db.db.insert(proposals).values({
+      workId: s.w.id,
+      kind: 'edit',
+      status: 'accepted',
+      authorId: s.tolu.id,
+      title: 'A kinder line',
+      chapterId: s.ch1.id,
+      decidedAt: new Date(),
+    })
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { credits: unknown[] }
+    expect(page.credits).toMatchObject([
+      { role: 'author', person: { displayName: 'Ama' } },
+      { role: 'contributor', person: { displayName: 'Tolu' }, chapters: [1] },
+    ])
+  })
+
+  it('chapter credit line names the chapter’s writers', async () => {
+    const s = await creditScene()
+    await sessions(s, s.kemi.id, s.ch2, [25])
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { chapters: { slug: string }[] }
+    const credit = async (i: number) =>
+      (
+        (await anon(`/works/${s.w.publicPath}/chapters/${page.chapters[i]!.slug}`)).json() as {
+          credit: { displayName: string }[]
+        }
+      ).credit.map((p) => p.displayName)
+    expect(await credit(1)).toEqual(['Ama', 'Kemi'])
+    expect(await credit(0)).toEqual(['Ama'])
   })
 
   it('a malformed or unknown public path is a plain 404', async () => {

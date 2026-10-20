@@ -1,0 +1,1 @@
+ALTER TABLE "publications" ADD COLUMN "credits" jsonb DEFAULT '[]'::jsonb NOT NULL;

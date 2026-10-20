@@ -169,6 +169,13 @@
       "when": 1792486898646,
       "tag": "0023_classics",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792531345150,
+      "tag": "0024_publication_credits",
+      "breakpoints": true
     }
   ]
 }

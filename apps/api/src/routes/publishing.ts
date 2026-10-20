@@ -1,27 +1,21 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import {
   coverOf,
   PROBLEM,
   PublicationStatus,
   PublicChapter,
+  type PublicCredit,
+  type PublicPerson,
   PublicWork,
   PublishInput,
 } from '@morrow/contracts'
-import {
-  branches,
-  chapters,
-  documentSnapshots,
-  editSessions,
-  proposals,
-  publications,
-  works,
-  type Database,
-} from '@morrow/db'
+import { branches, chapters, documentSnapshots, publications, works, type Database } from '@morrow/db'
 import type { CollabGateway } from '../collab-gateway.ts'
 import { requireWork } from '../access.ts'
 import { recordActivity } from '../activity.ts'
+import { chapterCredits } from '../credits.ts'
 import { peopleByIds } from '../people.ts'
 import { HttpProblem, notFound } from '../problems.ts'
 import { slugify } from '../slug.ts'
@@ -114,6 +108,19 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Col
         })
         pinned.push({ chapter: c, snap })
       }
+      // Credits describe what was published: only edits and acceptances from before this moment count.
+      const before = new Date()
+      const credits = await Promise.all(
+        pinned.map(({ chapter }) =>
+          chapterCredits(db, {
+            workId: work.id,
+            ownerId: work.ownerId,
+            chapterId: chapter.id,
+            documentId: chapter.documentId,
+            before,
+          }),
+        ),
+      )
       await db.transaction(async (tx) => {
         await tx
           .update(publications)
@@ -121,7 +128,7 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Col
           .where(and(eq(publications.workId, work.id), isNull(publications.supersededAt)))
         if (pinned.length)
           await tx.insert(publications).values(
-            pinned.map(({ chapter, snap }) => ({
+            pinned.map(({ chapter, snap }, i) => ({
               workId: work.id,
               branchId: branch.id,
               chapterId: chapter.id,
@@ -130,6 +137,7 @@ export const publishingRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Col
               position: chapter.position,
               wordCount: snap.wordCount,
               publishedBy: userId,
+              credits: credits[i]!,
             })),
           )
         await tx
@@ -250,6 +258,40 @@ export async function readableWork(db: Database, publicPath: string) {
   return w ?? null
 }
 
+const personOr = (people: Map<string, PublicPerson>, id: string): PublicPerson =>
+  people.get(id) ?? { displayName: 'Unknown', username: null, avatarSeed: id.slice(-8), avatar: null }
+
+/**
+ * One line per person for the work page, from the credits stored on each live publication. Someone credited
+ * in several roles shows under their highest (co-writer over contributor), with the chapters of that role.
+ */
+function workCredits(
+  ownerId: string,
+  pubs: { credits: { userId: string; role: 'cowriter' | 'contributor' }[] }[],
+  people: Map<string, PublicPerson>,
+): PublicCredit[] {
+  const earned = new Map<string, { role: 'cowriter' | 'contributor'; chapters: number[] }>()
+  pubs.forEach((p, i) => {
+    for (const c of p.credits) {
+      const had = earned.get(c.userId)
+      if (!had || (had.role === 'contributor' && c.role === 'cowriter'))
+        earned.set(c.userId, { role: c.role, chapters: [i + 1] })
+      else if (had.role === c.role) had.chapters.push(i + 1)
+    }
+  })
+  const others = [...earned]
+    .flatMap(([id, e]) => {
+      const person = people.get(id)
+      return person ? [{ person, ...e }] : []
+    })
+    .sort(
+      (a, b) =>
+        (a.role === b.role ? 0 : a.role === 'cowriter' ? -1 : 1) ||
+        a.person.displayName.localeCompare(b.person.displayName),
+    )
+  return [{ person: personOr(people, ownerId), role: 'author', chapters: [] }, ...others]
+}
+
 export async function livePublications(db: Database, workId: string) {
   return db
     .select()
@@ -270,41 +312,11 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
       const [branch] = pubs.length
         ? await db.select().from(branches).where(eq(branches.id, pubs[0]!.branchId))
         : []
-      // Credit people who actually edited the published chapters (trusted server-side sessions, never Yjs client ids).
-      const docIds = pubs.length
-        ? (
-            await db
-              .select({ d: chapters.documentId })
-              .from(chapters)
-              .where(
-                inArray(
-                  chapters.id,
-                  pubs.map((p) => p.chapterId),
-                ),
-              )
-          ).map((r) => r.d)
-        : []
-      // Credited: people who edited the published chapters directly, and authors of accepted proposals to them (FR-014).
-      const chapterIds = pubs.map((p) => p.chapterId)
-      const creditedIds = new Set<string>()
-      if (docIds.length)
-        for (const r of await db
-          .selectDistinct({ id: editSessions.userId })
-          .from(editSessions)
-          .where(inArray(editSessions.documentId, docIds)))
-          creditedIds.add(r.id)
-      if (chapterIds.length)
-        for (const r of await db
-          .selectDistinct({ id: proposals.authorId })
-          .from(proposals)
-          .where(and(inArray(proposals.chapterId, chapterIds), eq(proposals.status, 'accepted'))))
-          creditedIds.add(r.id)
-      creditedIds.delete(w.ownerId)
-      const people = await peopleByIds(db, [w.ownerId, ...creditedIds])
-      const editors = [...creditedIds]
-        .map((id) => people.get(id))
-        .filter((p) => p !== undefined)
-        .sort((a, b) => a.displayName.localeCompare(b.displayName))
+      const people = await peopleByIds(db, [
+        w.ownerId,
+        ...pubs.flatMap((p) => p.credits.map((c) => c.userId)),
+      ])
+      const credits = workCredits(w.ownerId, pubs, people)
       return {
         openToSuggestions:
           w.visibility === 'public' &&
@@ -319,13 +331,9 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         publishedAt: w.publishedAt!.toISOString(),
         indexable: w.visibility === 'public',
         versionName: branch && !branch.isDefault ? branch.name : null,
-        author: people.get(w.ownerId) ?? {
-          displayName: 'Unknown',
-          username: null,
-          avatarSeed: w.ownerId.slice(-8),
-          avatar: null,
-        },
-        contributors: editors,
+        author: credits[0]!.person,
+        credits,
+        contributors: credits.slice(1).map((c) => c.person),
         completed: w.completedAt !== null,
         cover: coverOf(w.id, w.cover),
         classic: classicOf(w.source),
@@ -365,6 +373,8 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         .select({ content: documentSnapshots.contentJson })
         .from(documentSnapshots)
         .where(eq(documentSnapshots.id, p.snapshotId))
+      const cowriters = p.credits.filter((c) => c.role === 'cowriter').map((c) => c.userId)
+      const people = await peopleByIds(db, [w.ownerId, ...cowriters])
       const summary = (x: (typeof pubs)[number] | undefined) =>
         x ? { title: x.title, slug: chapterSlug(x.title, x.chapterId), wordCount: x.wordCount } : null
       return {
@@ -373,6 +383,12 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         index,
         content: snap?.content ?? { type: 'doc' },
         wordCount: p.wordCount,
+        credit: [
+          personOr(people, w.ownerId),
+          ...cowriters
+            .flatMap((id) => people.get(id) ?? [])
+            .sort((a, b) => a.displayName.localeCompare(b.displayName)),
+        ],
         prev: summary(pubs[index - 1]),
         next: summary(pubs[index + 1]),
       }

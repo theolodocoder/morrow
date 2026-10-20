@@ -636,6 +636,17 @@ export const OpenAccessInfo = z.object({
   changes: z.string(),
 })
 export type OpenAccessInfo = z.infer<typeof OpenAccessInfo>
+/** Credit labels, fixed when a chapter is published: owner, members past the edit threshold, accepted proposers. */
+export const CreditRole = z.enum(['author', 'cowriter', 'contributor'])
+export type CreditRole = z.infer<typeof CreditRole>
+export const PublicCredit = z.object({
+  person: PublicPerson,
+  role: CreditRole,
+  /** 1-based chapter numbers the role was earned in; empty for the author */
+  chapters: z.array(z.number().int()),
+})
+export type PublicCredit = z.infer<typeof PublicCredit>
+
 export const PublicWork = z.object({
   cover: CoverConfig,
   classic: ClassicInfo.nullable(),
@@ -656,7 +667,9 @@ export const PublicWork = z.object({
   indexable: z.boolean(),
   versionName: z.string().nullable(),
   author: PublicPerson,
-  /** people who actually edited the published chapters (from server-side edit sessions) */
+  /** author first, then co-writers, then contributors, each by name */
+  credits: z.array(PublicCredit),
+  /** everyone in `credits` but the author, for callers that only need faces */
   contributors: z.array(PublicPerson),
   chapters: z.array(PublicChapterSummary),
   wordCount: z.number().int(),
@@ -673,6 +686,8 @@ export const PublicChapter = z.object({
   index: z.number().int(),
   content: z.unknown(),
   wordCount: z.number().int(),
+  /** the chapter's writers: the author, then its co-writers */
+  credit: z.array(PublicPerson),
   prev: PublicChapterSummary.nullable(),
   next: PublicChapterSummary.nullable(),
 })
