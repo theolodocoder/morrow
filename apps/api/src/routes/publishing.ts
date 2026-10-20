@@ -210,6 +210,28 @@ export function classicOf(source: unknown) {
     : null
 }
 
+/** An open-access article's attribution (P-064): who wrote it, where, under which licence, and what we changed. */
+export function openAccessOf(source: unknown) {
+  const s = source as Record<string, unknown> | null
+  if (s?.kind !== 'open_access') return null
+  return {
+    authors: Array.isArray(s.authors) ? (s.authors as unknown[]).map(String) : [],
+    journal: String(s.journal ?? ''),
+    year: Number(s.year) || 0,
+    doi: typeof s.doi === 'string' ? s.doi : null,
+    license: String(s.license ?? 'CC BY'),
+    licenseUrl: String(s.licenseUrl ?? ''),
+    url: String(s.url ?? ''),
+    changes: String(s.changes ?? ''),
+  }
+}
+
+/** "Dan Denis and Scott A. Cairney", "A, B, C et al." */
+export function bylineOf(authors: string[]) {
+  if (authors.length <= 2) return authors.join(' and ') || 'Unknown authors'
+  return `${authors.slice(0, 2).join(', ')} et al.`
+}
+
 export async function readableWork(db: Database, publicPath: string) {
   const publicId = publicPath.slice(publicPath.lastIndexOf('-') + 1)
   if (!/^[0-9a-f]{10}$/.test(publicId)) return null
@@ -307,6 +329,7 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         completed: w.completedAt !== null,
         cover: coverOf(w.id, w.cover),
         classic: classicOf(w.source),
+        openAccess: openAccessOf(w.source),
         releaseDay: w.releaseDay,
         openRoles: w.openRoles as PublicWork['openRoles'],
         likes: w.likeCount,
