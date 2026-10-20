@@ -1143,8 +1143,10 @@ const ReaderCommentBase = z.object({
   canDelete: z.boolean(),
   /** deleted, but kept as a placeholder because people replied to it */
   removed: z.boolean(),
-  /** a paragraph comment (P-054): the block it sits beside; null for comments on the whole work */
+  /** a paragraph comment (P-054): the block it sits beside; null for comments on the whole work or a chapter */
   blockId: z.string().nullable(),
+  /** the paragraph's text from the published chapter (≤ 280 chars); null for other comments, replies, or a block no longer in the text */
+  quote: z.string().nullable(),
 })
 /** A top-level comment and its replies (one level deep). */
 export const ReaderComment = ReaderCommentBase.extend({ replies: z.array(ReaderCommentBase) })
@@ -1160,7 +1162,7 @@ export const ReaderComments = z.object({
 export const CreateReaderCommentInput = z.object({
   body: z.string().trim().min(1).max(2000),
   parentId: z.uuid().optional(),
-  /** a paragraph comment (P-054): the published chapter and the block, given together */
+  /** a chapter comment is the published chapter alone; a paragraph comment (P-054) adds the block */
   chapterSlug: z.string().min(1).max(240).optional(),
   blockId: z.string().min(1).max(120).optional(),
 })

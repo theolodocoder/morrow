@@ -44,7 +44,8 @@ type Comments = {
     removed: boolean
     byAuthor: boolean
     canDelete: boolean
-    replies: { body: string }[]
+    quote: string | null
+    replies: { body: string; quote: string | null }[]
   }[]
   total: number
   canComment: boolean
@@ -401,6 +402,68 @@ describe('paragraph comments (P-054)', () => {
     expect(main.items.map((c) => c.body)).toEqual(['Loved the whole thing.'])
     // an unknown chapter is a 404, not a silent empty list
     expect((await pub(`/reading/${w.publicPath}/comments?chapter=nope-zzzzzz&block=b1`)).statusCode).toBe(404)
+  })
+})
+
+describe('chapter discussion', () => {
+  // sign-up is rate limited, so the four tests share one writer and one reader
+  let people: Promise<[Awaited<ReturnType<typeof person>>, Awaited<ReturnType<typeof person>>]> | undefined
+  async function discussed() {
+    people ??= Promise.all([person('Ama Chapter'), person('Bo Chapter')])
+    const [ama, bo] = await people
+    const w = await piece(ama, 'Chapter Talk', ['One.', 'Two is the line.', 'Three.'], 'short_story', true)
+    const page = (await pub(`/works/${w.publicPath}`)).json() as { chapters: { slug: string }[] }
+    const slug = page.chapters[0]!.slug
+    const post = (body: Record<string, unknown>) =>
+      bo.call('POST', `/api/v1/reading/${w.publicPath}/comments`, body)
+    const list = async (q: string) => (await pub(`/reading/${w.publicPath}/comments${q}`)).json() as Comments
+    return { w, slug, post, list }
+  }
+
+  it('a chapter comment shows in its chapter, not on the work page', async () => {
+    const { w, slug, post, list } = await discussed()
+    const r = await post({ body: 'Great chapter.', chapterSlug: slug })
+    expect(r.statusCode).toBe(201)
+    const chapter = await list(`?chapter=${slug}`)
+    expect(chapter.items.map((c) => c.body)).toEqual(['Great chapter.'])
+    expect(chapter.items[0]!.quote).toBeNull()
+    expect((await list('')).items).toEqual([])
+    // still counted toward the work's total
+    expect((await ctx.db.db.select().from(works).where(eq(works.id, w.id)))[0]!.readerCommentCount).toBe(1)
+  })
+
+  it('paragraph comments appear in the chapter discussion quoting their line', async () => {
+    const { slug, post, list } = await discussed()
+    const id = (
+      (await post({ body: 'This line!', chapterSlug: slug, blockId: 'b1' })).json() as { id: string }
+    ).id
+    await post({ body: 'Chapter-level.', chapterSlug: slug })
+    const chapter = await list(`?chapter=${slug}`)
+    expect(chapter.items.map((c) => [c.body, c.quote])).toEqual([
+      ['Chapter-level.', null],
+      ['This line!', 'Two is the line.'],
+    ])
+    // replies share the shape; they carry no quote of their own
+    await post({ body: 'Agreed.', parentId: id })
+    expect((await list(`?chapter=${slug}`)).items[1]!.replies[0]!.quote).toBeNull()
+    // the paragraph's own thread is unchanged
+    expect((await list(`?chapter=${slug}&block=b1`)).items.map((c) => c.body)).toEqual(['This line!'])
+  })
+
+  it('whole-work comments stay on the work page', async () => {
+    const { slug, post, list } = await discussed()
+    await post({ body: 'Loved the whole thing.' })
+    await post({ body: 'Chapter one only.', chapterSlug: slug })
+    expect((await list('')).items.map((c) => c.body)).toEqual(['Loved the whole thing.'])
+    expect((await list(`?chapter=${slug}`)).items.map((c) => c.body)).toEqual(['Chapter one only.'])
+  })
+
+  it('the quote is null when the block is no longer in the published text', async () => {
+    const { slug, post, list } = await discussed()
+    await post({ body: 'Gone line.', chapterSlug: slug, blockId: 'ghost' })
+    expect((await list(`?chapter=${slug}`)).items.map((c) => [c.body, c.quote])).toEqual([
+      ['Gone line.', null],
+    ])
   })
 })
 

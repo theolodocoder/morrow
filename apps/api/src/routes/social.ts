@@ -9,6 +9,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { and, asc, desc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm'
 import type { ReaderComment } from '@morrow/contracts'
+import { openingLine, type PMNode } from '@morrow/editor'
 import {
   coverOf,
   CreateReaderCommentInput,
@@ -337,7 +338,7 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
         params: PathParams,
         querystring: z.object({
           cursor: z.string().max(200).optional(),
-          /** a paragraph's thread (P-054); without these, the comments on the whole work */
+          /** a chapter's discussion (paragraph comments included), or with `block` one paragraph's thread (P-054); without these, the comments on the whole work */
           chapter: z.string().max(240).optional(),
           block: z.string().max(120).optional(),
         }),
@@ -352,9 +353,8 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
       const hidden = me ? await blockedSet(db, me) : new Set<string>()
       const per = 20
       const after = decode<{ t: string; id: string }>(req.query.cursor)
-      const chapterId =
-        req.query.chapter && req.query.block ? await publishedChapterId(db, w.id, req.query.chapter) : null
-      if (req.query.block && !chapterId) throw notFound()
+      const chapterId = req.query.chapter ? await publishedChapterId(db, w.id, req.query.chapter) : null
+      if ((req.query.chapter || req.query.block) && !chapterId) throw notFound()
       const tops = await db
         .select()
         .from(readerComments)
@@ -363,8 +363,11 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
             eq(readerComments.workId, w.id),
             isNull(readerComments.parentId),
             chapterId
-              ? and(eq(readerComments.chapterId, chapterId), eq(readerComments.blockId, req.query.block!))
-              : isNull(readerComments.blockId),
+              ? and(
+                  eq(readerComments.chapterId, chapterId),
+                  req.query.block ? eq(readerComments.blockId, req.query.block) : undefined,
+                )
+              : isNull(readerComments.chapterId),
             after
               ? sql`(${readerComments.createdAt}, ${readerComments.id}) < (${after.t}::timestamptz, ${after.id}::uuid)`
               : undefined,
@@ -392,6 +395,8 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
         db,
         [...page, ...replies].map((c) => c.authorId),
       )
+      // The whole-work list has no quotes; a chapter's snapshot is read once for all its comments.
+      const doc = chapterId ? await publishedDoc(db, w.id, chapterId) : undefined
       const view = (c: typeof readerComments.$inferSelect): ReaderReply => ({
         id: c.id,
         parentId: c.parentId,
@@ -413,6 +418,7 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
         canDelete: !c.deletedAt && !!me && (me === c.authorId || me === w.ownerId),
         removed: !!c.deletedAt,
         blockId: c.blockId,
+        quote: null,
       })
       const items: ReaderComment[] = []
       for (const c of page) {
@@ -420,7 +426,7 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
         const mine = replies.filter((r) => r.parentId === c.id && !hidden.has(r.authorId)).map(view)
         // A deleted comment stays only as a placeholder for its replies.
         if (c.deletedAt && !mine.length) continue
-        items.push({ ...view(c), replies: mine })
+        items.push({ ...view(c), quote: quoteOf(doc, c.blockId), replies: mine })
       }
       const last = page.at(-1)
       return {
@@ -475,6 +481,30 @@ async function publishedChapterId(db: Database, workId: string, slug: string) {
   const main = await livePublications(db, workId)
   const named = (rows: { chapterId: string }[]) => rows.find((r) => r.chapterId.endsWith(suffix))?.chapterId
   return named(main) ?? (await readableAlternates(db, main)).map((a) => named(a.rows)).find(Boolean) ?? null
+}
+
+/** The live (published) text of one chapter, main's or a readable alternate's. */
+async function publishedDoc(db: Database, workId: string, chapterId: string) {
+  const main = await livePublications(db, workId)
+  const row = [...main, ...(await readableAlternates(db, main)).flatMap((a) => a.rows)].find(
+    (r) => r.chapterId === chapterId,
+  )
+  if (!row) return undefined
+  const [snap] = await db
+    .select({ doc: documentSnapshots.contentJson })
+    .from(documentSnapshots)
+    .where(eq(documentSnapshots.id, row.snapshotId))
+  return snap?.doc as PMNode | undefined
+}
+
+const findBlock = (node: PMNode, id: string): PMNode | undefined =>
+  node.attrs?.id === id ? node : node.content?.map((c) => findBlock(c, id)).find(Boolean)
+
+/** A paragraph's published text for a comment to quote; null when it is no longer in the chapter. */
+function quoteOf(doc: PMNode | undefined, blockId: string | null) {
+  const block = doc && blockId ? findBlock(doc, blockId) : undefined
+  // 279 + the ellipsis keeps it within 280
+  return block ? openingLine({ type: 'doc', content: [block] }, 279) : null
 }
 
 /**
@@ -581,10 +611,10 @@ export const socialRoutes: FastifyPluginAsyncZod<{ db: Database }> = async (app,
       let parentAuthor: string | null = null
       let chapterId: string | null = null
       let blockId: string | null = null
-      if (req.body.chapterSlug && req.body.blockId) {
+      if (req.body.chapterSlug) {
         chapterId = await publishedChapterId(db, w.id, req.body.chapterSlug)
         if (!chapterId) throw notFound()
-        blockId = req.body.blockId
+        blockId = req.body.blockId ?? null
       }
       if (req.body.parentId) {
         const [p] = await db.select().from(readerComments).where(eq(readerComments.id, req.body.parentId))
