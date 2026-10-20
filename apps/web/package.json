@@ -1,0 +1,47 @@
+{
+  "name": "@morrow/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@floating-ui/dom": "^1.8.0",
+    "@hocuspocus/provider": "^4.7.1",
+    "@morrow/contracts": "workspace:*",
+    "@morrow/domain": "workspace:*",
+    "@morrow/editor": "workspace:*",
+    "@morrow/tokens": "workspace:*",
+    "@tiptap/extension-collaboration": "^3.32.0",
+    "@tiptap/extension-collaboration-caret": "^3.32.0",
+    "@tiptap/extension-drag-handle": "^3.32.0",
+    "@tiptap/extension-drag-handle-react": "^3.32.0",
+    "@tiptap/extension-node-range": "^3.32.0",
+    "@tiptap/extensions": "^3.32.0",
+    "@tiptap/pm": "^3.32.0",
+    "@tiptap/react": "^3.32.0",
+    "@tiptap/suggestion": "^3.32.0",
+    "@tiptap/y-tiptap": "^3.0.10",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-aria-components": "^1.22.1",
+    "react-dom": "^19.3.1",
+    "server-only": "^0.0.1",
+    "yjs": "~13.6.33"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@morrow/config": "workspace:*",
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15"
+  }
+}

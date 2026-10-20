@@ -1,0 +1,12 @@
+# Local development only. Never use these credentials anywhere else.
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: morrow
+      POSTGRES_PASSWORD: morrow
+      POSTGRES_DB: morrow
+    ports: ['127.0.0.1:5432:5432']
+    volumes: [pgdata:/var/lib/postgresql]
+volumes:
+  pgdata:

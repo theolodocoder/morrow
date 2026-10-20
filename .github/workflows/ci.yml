@@ -1,0 +1,26 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_USER: morrow, POSTGRES_PASSWORD: morrow, POSTGRES_DB: morrow }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U morrow" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc }
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: pnpm --filter @morrow/tokens build
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+        env: { TEST_DATABASE_URL: 'postgres://morrow:morrow@127.0.0.1:5432/morrow' }
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}' }

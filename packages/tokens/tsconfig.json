@@ -1,0 +1,7 @@
+{
+  "extends": "@morrow/config/tsconfig.base.json",
+  "include": ["src", "test", "scripts"],
+  "compilerOptions": {
+    "types": ["node"]
+  }
+}

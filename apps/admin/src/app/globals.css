@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+@import '@morrow/tokens/tokens.css';
+
+/*
+ * Tailwind reads only our semantic tokens: the default palette is removed so components cannot reach for
+ * raw colours (design system §16). Utilities: bg-canvas, text-primary, border-control, ring-focus …
+ */
+@theme {
+  --color-*: initial;
+  --color-app: var(--bg-app);
+  --color-canvas: var(--bg-canvas);
+  --color-sidebar: var(--bg-sidebar);
+  --color-raised: var(--bg-raised);
+  --color-hover: var(--bg-hover);
+  --color-selected: var(--bg-selected);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+  --color-accent: var(--text-accent);
+  --color-success: var(--text-success);
+  --color-warning: var(--text-warning);
+  --color-danger: var(--text-danger);
+  --color-action: var(--action-primary-bg);
+  --color-action-fg: var(--action-primary-fg);
+  --color-action-hover: var(--action-primary-hover);
+  --color-subtle: var(--border-subtle);
+  --color-control: var(--border-control);
+  --color-focus: var(--focus-ring);
+  --color-ornament: var(--decor-ornament);
+  --color-tint-warning: var(--tint-warning);
+  --color-transparent: transparent;
+
+  --font-display: var(--font-display-family);
+  --font-manuscript: var(--font-manuscript-family);
+  --font-ui: var(--font-ui-family);
+  --font-mono: var(--font-mono-family);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+html {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui-family);
+}
+:root {
+  --font-display-family: var(--nf-ui), system-ui, sans-serif;
+  --font-ui-family: var(--nf-ui), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono-family: var(--nf-mono), ui-monospace, Menlo, monospace;
+  --font-manuscript-family: Georgia, serif;
+}

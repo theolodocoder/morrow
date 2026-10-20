@@ -1,0 +1,32 @@
+{
+  "name": "@morrow/collab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --import tsx --watch src/main.ts",
+    "start": "node --import tsx src/main.ts",
+    "typecheck": "tsc",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "backup-check": "node --env-file=../../.env --import tsx src/cli/backup-check.ts"
+  },
+  "dependencies": {
+    "@hocuspocus/server": "^4.7.1",
+    "@morrow/contracts": "workspace:*",
+    "@morrow/db": "workspace:*",
+    "@morrow/domain": "workspace:*",
+    "@morrow/editor": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+    "yjs": "~13.6.33",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@hocuspocus/provider": "^4.7.1",
+    "@morrow/config": "workspace:*",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
+  }
+}

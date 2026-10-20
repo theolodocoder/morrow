@@ -1,0 +1,7 @@
+{
+  "extends": "@morrow/config/tsconfig.base.json",
+  "include": ["src", "test"],
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"]
+  }
+}

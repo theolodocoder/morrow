@@ -1,0 +1,1026 @@
+@import 'tailwindcss';
+@import '@morrow/tokens/tokens.css';
+
+/*
+ * Tailwind reads only our semantic tokens: the default palette is removed so components cannot reach for
+ * raw colours (design system §16). Utilities: bg-canvas, text-primary, border-control, ring-focus …
+ */
+@theme {
+  --color-*: initial;
+  --color-app: var(--bg-app);
+  --color-canvas: var(--bg-canvas);
+  --color-sidebar: var(--bg-sidebar);
+  --color-raised: var(--bg-raised);
+  --color-hover: var(--bg-hover);
+  --color-selected: var(--bg-selected);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-tertiary: var(--text-tertiary);
+  --color-accent: var(--text-accent);
+  --color-success: var(--text-success);
+  --color-warning: var(--text-warning);
+  --color-danger: var(--text-danger);
+  --color-action: var(--action-primary-bg);
+  --color-action-fg: var(--action-primary-fg);
+  --color-action-hover: var(--action-primary-hover);
+  --color-subtle: var(--border-subtle);
+  --color-control: var(--border-control);
+  --color-focus: var(--focus-ring);
+  --color-ornament: var(--decor-ornament);
+  --color-tint-warning: var(--tint-warning);
+  --color-transparent: transparent;
+
+  --font-display: var(--font-display-family);
+  --font-manuscript: var(--font-manuscript-family);
+  --font-ui: var(--font-ui-family);
+  --font-mono: var(--font-mono-family);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+@layer base {
+  html {
+    background: var(--bg-app);
+    color: var(--text-primary);
+    font-family: var(--font-ui-family);
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    min-height: 100dvh;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--bg-selected);
+  }
+}
+
+/* Manuscript typography (design system §4, §10): Literata, 68ch measure, comfortable rhythm. */
+.manuscript {
+  font-family: var(--font-manuscript-family);
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+@media (min-width: 768px) {
+  .manuscript {
+    font-size: 18px;
+    line-height: 1.75;
+  }
+}
+@media (min-width: 1024px) {
+  .manuscript {
+    font-size: 19px;
+    line-height: 1.8;
+  }
+}
+.manuscript :is(.ProseMirror, .reading-body) {
+  outline: none;
+  max-width: 68ch;
+  margin-inline: auto;
+  padding-bottom: 40vh;
+}
+.manuscript :is(.ProseMirror, .reading-body) p {
+  margin: 0;
+}
+.manuscript :is(.ProseMirror, .reading-body) p + p {
+  text-indent: 1.5em;
+}
+.manuscript :is(.ProseMirror, .reading-body) h2 {
+  font-size: 1.26em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 2em 0 0.75em;
+}
+.manuscript :is(.ProseMirror, .reading-body) h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.75em 0 0.5em;
+}
+.manuscript :is(.ProseMirror, .reading-body) blockquote {
+  margin: 1.25em 0;
+  padding-left: 1.5em;
+  border-left: 2px solid var(--text-accent);
+  font-style: italic;
+}
+.manuscript :is(.ProseMirror, .reading-body) ul,
+.manuscript :is(.ProseMirror, .reading-body) ol {
+  padding-left: 1.5em;
+  margin: 0.75em 0;
+}
+.manuscript :is(.ProseMirror, .reading-body) ul {
+  list-style: disc;
+}
+.manuscript :is(.ProseMirror, .reading-body) ol {
+  list-style: decimal;
+}
+.manuscript :is(.ProseMirror, .reading-body) a {
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+/* Scene break: a decorative asterism; screen readers get the semantic <hr>. */
+.manuscript :is(.ProseMirror, .reading-body) hr {
+  border: 0;
+  margin: 2em 0;
+  text-align: center;
+  height: 1.5em;
+}
+.manuscript :is(.ProseMirror, .reading-body) hr::after {
+  content: '⁂';
+  color: var(--decor-ornament);
+  font-size: 1.1em;
+}
+.manuscript .ProseMirror:focus p.is-empty::before,
+.manuscript :is(.ProseMirror, .reading-body) p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--text-tertiary);
+  font-style: italic;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.manuscript .ProseMirror-selectednode {
+  outline: 2px solid var(--focus-ring);
+}
+
+/* next/font exposes hashed family names; put them in front of the token fallback stacks. */
+:root {
+  --font-display-family: var(--nf-display), 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-manuscript-family: var(--nf-manuscript), 'Iowan Old Style', Georgia, serif;
+  --font-ui-family: var(--nf-ui), system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono-family: var(--nf-mono), ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* Remote carets (design system §11, research ref §3): the label shows on activity and fades after ~2.5s still. */
+.collaboration-carets__caret {
+  position: relative;
+  margin-inline: -1px;
+  border-left: 2px solid var(--caret-color);
+  word-break: normal;
+  pointer-events: none;
+}
+.collaboration-carets__label {
+  position: absolute;
+  left: -2px;
+  top: -1.45em;
+  padding: 1px 6px;
+  border-radius: 2px 2px 2px 0;
+  white-space: nowrap;
+  user-select: none;
+  background: var(--caret-color);
+  color: #ffffff;
+  font: 500 11px/1.4 var(--font-ui-family);
+  text-indent: 0;
+  font-style: normal;
+  animation: caret-label-fade 2.5s ease-in forwards;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .collaboration-carets__label {
+    color: var(--bg-app);
+  }
+}
+:root[data-theme='dark'] .collaboration-carets__label {
+  color: var(--bg-app);
+}
+.collaboration-carets__caret:hover .collaboration-carets__label {
+  animation: none;
+  opacity: 1;
+}
+@keyframes caret-label-fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collaboration-carets__label {
+    animation: none;
+  }
+}
+.ProseMirror .collaboration-carets__selection {
+  background: color-mix(in srgb, var(--caret-color, var(--bg-selected)) 20%, transparent);
+}
+
+/* Editor v2 marks and code (PRD FR-007). Code uses the mono face; nothing is syntax-highlighted. */
+.manuscript :is(.ProseMirror, .reading-body) u {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.manuscript :is(.ProseMirror, .reading-body) s {
+  text-decoration: line-through;
+}
+.manuscript :is(.ProseMirror, .reading-body) code {
+  font-family: var(--font-mono-family);
+  font-size: 0.86em;
+  background: var(--bg-hover);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+.manuscript :is(.ProseMirror, .reading-body) pre {
+  font-family: var(--font-mono-family);
+  font-size: 0.82em;
+  line-height: 1.6;
+  background: var(--bg-app);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1em 1.2em;
+  margin: 1.25em 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+.manuscript :is(.ProseMirror, .reading-body) pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.manuscript :is(.ProseMirror, .reading-body) pre + p,
+.manuscript :is(.ProseMirror, .reading-body) p + pre {
+  text-indent: 0;
+}
+
+/* Find highlights: tint plus underline so the match is never conveyed by colour alone. */
+.find-match {
+  background: var(--tint-warning);
+  border-bottom: 1px solid var(--text-warning);
+}
+.find-current {
+  background: var(--bg-selected);
+  border-bottom: 2px solid var(--focus-ring);
+}
+
+/* Public reading page: the same manuscript typography, without the editor's scroll runway. */
+.manuscript .reading-body {
+  padding-bottom: 0;
+}
+
+/* Feedback (FR-016/017): a soft tint plus underline, so a comment is visible without colour alone. Only drawn while
+   the Feedback panel is open. */
+.comment-anchor {
+  background: color-mix(in srgb, var(--decor-ornament) 22%, transparent);
+  border-bottom: 1px solid var(--decor-ornament);
+  cursor: pointer;
+}
+.comment-anchor--active {
+  background: color-mix(in srgb, var(--decor-ornament) 40%, transparent);
+  border-bottom-width: 2px;
+}
+.reaction-chip {
+  display: inline-block;
+  margin-left: 0.5em;
+  padding: 0 0.45em;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-family: var(--font-ui-family);
+  font-size: 11px;
+  line-height: 1.6;
+  text-indent: 0;
+  color: var(--text-secondary);
+  vertical-align: 0.15em;
+  user-select: none;
+}
+
+/* "New feedback" dot: a soft ring pulses outward a few times, then rests. Under reduced motion it simply stays. */
+.feedback-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--action-primary-bg);
+  animation: feedback-pulse 1.6s var(--ease-out, ease-out) 4;
+}
+@keyframes feedback-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feedback-dot::after {
+    animation: none;
+    display: none;
+  }
+}
+
+/* ---- Schema v3: the forms of writing. The editor and the reading page share these rules. ---- */
+.manuscript :is(.ProseMirror, .reading-body) h4 {
+  font-size: 0.95em;
+  font-weight: 600;
+  font-style: italic;
+  margin: 1.5em 0 0.4em;
+}
+.manuscript :is(.ProseMirror, .reading-body) mark {
+  background: color-mix(in srgb, var(--decor-ornament) 35%, transparent);
+  color: inherit;
+  padding: 0 0.1em;
+  border-radius: 2px;
+}
+/* Scene break (fiction): the asterism, as a pause in the story. */
+.manuscript :is(.ProseMirror, .reading-body) .scene-break {
+  margin: 2em 0;
+  text-align: center;
+  height: 1.5em;
+  user-select: none;
+}
+.manuscript :is(.ProseMirror, .reading-body) .scene-break::after {
+  content: '⁂';
+  color: var(--decor-ornament);
+  font-size: 1.1em;
+}
+.manuscript :is(.ProseMirror, .reading-body) :is(.scene-break, hr) + p {
+  text-indent: 0;
+}
+/* Verse (poetry): every line break and indent is the poem's own. */
+.manuscript :is(.ProseMirror, .reading-body) .verse {
+  white-space: pre-wrap;
+  margin: 1em 0 1.25em;
+  padding-left: 0.25em;
+  text-indent: 0;
+}
+.manuscript :is(.ProseMirror, .reading-body) .verse + .verse {
+  margin-top: 0;
+}
+/* Callouts: a note, a tip, a warning, or a paper's abstract. Tone shows in the rule colour and, for readers, a label. */
+.manuscript :is(.ProseMirror, .reading-body) .callout {
+  margin: 1.25em 0;
+  padding: 0.75em 1em;
+  border-radius: 6px;
+  border-left: 3px solid var(--text-accent);
+  background: var(--bg-app);
+  font-family: var(--font-ui-family);
+  font-size: 0.88em;
+  line-height: 1.6;
+}
+.manuscript :is(.ProseMirror, .reading-body) .callout p + p {
+  text-indent: 0;
+  margin-top: 0.5em;
+}
+.manuscript :is(.ProseMirror, .reading-body) .callout[data-tone='tip'] {
+  border-left-color: var(--text-success);
+}
+.manuscript :is(.ProseMirror, .reading-body) .callout[data-tone='warning'] {
+  border-left-color: var(--text-warning);
+  background: var(--tint-warning);
+}
+.manuscript :is(.ProseMirror, .reading-body) .callout[data-tone='abstract'] {
+  border-left: 0;
+  border-block: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-manuscript-family);
+  font-size: 0.92em;
+  padding-inline: 2em;
+}
+.manuscript .ProseMirror .callout[data-tone='abstract']::before,
+.manuscript .reading-body .callout-label {
+  display: block;
+  font-family: var(--font-ui-family);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 0.4em;
+}
+.manuscript .ProseMirror .callout[data-tone='abstract']::before {
+  content: 'Abstract';
+}
+/* Tables (papers, articles). */
+.manuscript :is(.ProseMirror, .reading-body) .table-scroll,
+.manuscript .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1.25em 0;
+}
+.manuscript :is(.ProseMirror, .reading-body) table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-ui-family);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+.manuscript :is(.ProseMirror, .reading-body) :is(th, td) {
+  border: 1px solid var(--border-subtle);
+  padding: 0.4em 0.65em;
+  vertical-align: top;
+  text-align: left;
+  min-width: 4em;
+}
+.manuscript :is(.ProseMirror, .reading-body) th {
+  background: var(--bg-app);
+  font-weight: 600;
+}
+.manuscript :is(.ProseMirror, .reading-body) :is(th, td) p + p {
+  text-indent: 0;
+}
+.manuscript .ProseMirror .selectedCell {
+  background: var(--bg-selected);
+}
+/* Checklists. */
+.manuscript :is(.ProseMirror, .reading-body) ul.task-list,
+.manuscript .ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.manuscript .ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+  gap: 0.6em;
+  align-items: baseline;
+}
+.manuscript .ProseMirror ul[data-type='taskList'] li > label input {
+  accent-color: var(--action-primary-bg);
+  width: 1em;
+  height: 1em;
+}
+.manuscript .ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div,
+.manuscript .reading-body .task-list li[data-checked='true'] {
+  color: var(--text-secondary);
+  text-decoration: line-through;
+}
+.manuscript .reading-body .task-list .task-box {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.6em;
+  border: 1.5px solid var(--border-control);
+  border-radius: 3px;
+  vertical-align: -0.05em;
+}
+.manuscript .reading-body .task-list li[data-checked='true'] .task-box {
+  background: var(--action-primary-bg);
+  border-color: var(--action-primary-bg);
+}
+/* Footnotes and citations: numbered markers in the editor (by CSS counter, so they renumber as you write). */
+.manuscript .ProseMirror {
+  counter-reset: footnote citation;
+}
+.manuscript .ProseMirror sup.note-marker {
+  cursor: pointer;
+  color: var(--text-accent);
+  font-family: var(--font-ui-family);
+  font-size: 0.65em;
+  font-weight: 600;
+  padding: 0 0.1em;
+}
+.manuscript .ProseMirror sup.note-marker[data-note='footnote']::after {
+  counter-increment: footnote;
+  content: counter(footnote);
+}
+.manuscript .ProseMirror sup.note-marker[data-note='citation']::after {
+  counter-increment: citation;
+  content: '[' counter(citation) ']';
+}
+.manuscript .reading-body :is(.footnote-ref a, .citation-ref) {
+  font-family: var(--font-ui-family);
+  font-size: 0.75em;
+  text-decoration: none;
+}
+.manuscript .reading-body .footnote-ref {
+  line-height: 0;
+}
+.manuscript .reading-body :is(.footnotes, .references) {
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.85em;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.manuscript .reading-body .references h2 {
+  margin-top: 0;
+}
+.manuscript .reading-body :is(.footnotes, .references) ol {
+  list-style: decimal;
+}
+.manuscript .reading-body :is(.footnotes, .references) li {
+  scroll-margin-top: 4rem;
+  margin: 0.35em 0;
+}
+
+/*
+ * Typography by form (the work's category). Fiction keeps the book convention set above: indented paragraphs, no gaps.
+ * Articles, essays and documents use spaced paragraphs; papers add justified text and numbered sections; poetry
+ * keeps every line and spaces stanzas.
+ */
+:is(
+    [data-form='article'],
+    [data-form='essay'],
+    [data-form='educational'],
+    [data-form='general_document'],
+    [data-form='research_paper']
+  )
+  :is(.ProseMirror p, p),
+.reading-body:is(
+    [data-form='article'],
+    [data-form='essay'],
+    [data-form='educational'],
+    [data-form='general_document'],
+    [data-form='research_paper']
+  )
+  p {
+  text-indent: 0 !important;
+  margin: 0 0 1em;
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) {
+  counter-reset: section;
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) p {
+  text-align: justify;
+  hyphens: auto;
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) h2 {
+  counter-increment: section;
+  counter-reset: subsection;
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) h2::before {
+  content: counter(section) '. ';
+  color: var(--text-tertiary);
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) h3 {
+  counter-increment: subsection;
+}
+:is([data-form='research_paper'] .ProseMirror, .reading-body[data-form='research_paper']) h3::before {
+  content: counter(section) '.' counter(subsection) ' ';
+  color: var(--text-tertiary);
+}
+.reading-body[data-form='research_paper'] .references h2::before {
+  content: none;
+}
+:is([data-form='poetry'] .ProseMirror, .reading-body[data-form='poetry']) p {
+  text-indent: 0 !important;
+  white-space: pre-wrap;
+  margin: 0 0 1.25em;
+}
+
+/* The block handle (+ and ⋮⋮) sits in the margin beside the hovered block. */
+.manuscript .drag-handle,
+.manuscript [data-drag-handle] {
+  transition: opacity var(--motion-fast, 120ms);
+}
+.ProseMirror .ProseMirror-dropcursor,
+.ProseMirror-dropcursor {
+  background: var(--action-primary-bg);
+}
+
+/* ---- Micro-interactions (design/product-redesign.md §8): 150–250ms ease-out; nothing moves under reduced motion. ---- */
+.press {
+  transition: transform 120ms var(--ease-out, ease-out);
+}
+.press:active {
+  transform: scale(0.97);
+}
+.sheet[data-entering] {
+  animation: sheet-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet[data-exiting] {
+  animation: sheet-in 160ms ease-in reverse;
+}
+@media (min-width: 640px) {
+  .sheet[data-entering] {
+    animation-name: dialog-in;
+  }
+  .sheet[data-exiting] {
+    animation-name: dialog-in;
+  }
+}
+.sheet[data-swiped][data-exiting],
+.panel[data-swiped] {
+  animation: none;
+}
+.sheet-backdrop[data-entering] {
+  animation: fade-in 200ms ease-out;
+}
+.sheet-backdrop[data-exiting] {
+  animation: fade-in 160ms ease-in reverse;
+}
+.popover[data-entering] {
+  animation: pop-in 140ms ease-out;
+}
+.badge-pop {
+  animation: pop-in 200ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+/* A like: the heart fills and gives one small pop. */
+.like-pop {
+  animation: like-pop 260ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.toast[data-entering] {
+  animation: toast-in 200ms ease-out;
+}
+.toast[data-exiting] {
+  animation: fade-in 150ms ease-in reverse;
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+/* Entrances move but don't fade: text that fades in is briefly below contrast (and axe rightly says so). Only
+   backdrops, which carry no text, fade. */
+@keyframes dialog-in {
+  from {
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.95);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes like-pop {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+/* a slide only: fading would leave the text briefly below contrast (axe catches it mid-animation) */
+@keyframes toast-in {
+  from {
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Covers lift a little under the pointer, like picking a book off the shelf. */
+.lift > svg,
+.lift .lift-target {
+  transition:
+    transform 200ms var(--ease-out, ease-out),
+    box-shadow 200ms var(--ease-out, ease-out);
+}
+@media (hover: hover) {
+  .lift:hover > svg,
+  .lift:hover .lift-target {
+    transform: translateY(-4px) rotate(-0.6deg);
+  }
+}
+/* Shelves: swipe sideways, cards settle on an edge, and the far edge fades to say "there's more". */
+.shelf {
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 1rem;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+}
+.shelf::-webkit-scrollbar {
+  display: none;
+}
+.shelf > * {
+  scroll-snap-align: start;
+}
+/* A chosen kind: its glyph gives a small nod. */
+.kind-tile[data-selected] svg,
+.kind-tile[aria-current='page'] svg {
+  animation: pop-in 220ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+/* A usage ring fills to its value on arrival. */
+.ring-fill {
+  transition: stroke-dasharray 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: ring-fill 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes ring-fill {
+  from {
+    stroke-dasharray: 0 999;
+  }
+}
+/* A proposal's progress line fills toward where it's got to. */
+.progress-line {
+  animation: progress-line 500ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes progress-line {
+  from {
+    transform: scaleX(0);
+  }
+}
+/* Pull to refresh: the sun turns while the feed reloads. */
+.ptr-spin {
+  animation: ptr-spin 900ms linear infinite;
+}
+@keyframes ptr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* The chosen feed's underline grows in from its centre. */
+.tab-ink {
+  animation: tab-ink 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes tab-ink {
+  from {
+    transform: scaleX(0.2);
+  }
+}
+/* Comics hero: panels settle, bubbles pop, one after another. */
+.comic-panel {
+  animation: rise-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.comic-bubble {
+  animation: pop-in 320ms cubic-bezier(0.3, 1.5, 0.5, 1) both;
+}
+/* Paragraph comments (P-054): a quiet count in the margin, or a small "comment" pip after a tapped paragraph. */
+.reading-body p[data-block] {
+  position: relative;
+}
+.para-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-family: var(--font-ui-family, ui-sans-serif);
+  font-size: 12px;
+  line-height: 18px;
+  text-indent: 0;
+  vertical-align: 2px;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  animation: pop-in 200ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.para-note:hover,
+.para-note:focus-visible {
+  color: var(--text-primary);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--action-primary-bg);
+}
+.para-note-add {
+  color: var(--text-accent, var(--action-primary-bg));
+}
+@media (min-width: 1100px) {
+  /* in the right margin on wide screens, where it doesn't interrupt the line */
+  .para-note {
+    position: absolute;
+    right: -56px;
+    top: 0.2em;
+    margin: 0;
+  }
+}
+/* A milestone's suns rise once. */
+.milestone-sun {
+  animation: milestone-rise 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes milestone-rise {
+  to {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+}
+/* A check that draws itself in. */
+.check-draw {
+  stroke-dasharray: 14;
+  animation: check-draw 220ms ease-out both;
+}
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 14;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* Sections arrive with a short rise, one after another (transform only, so text stays at full contrast). */
+.rise-in {
+  animation: rise-in 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes rise-in {
+  from {
+    transform: translateY(10px);
+  }
+  to {
+    transform: none;
+  }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-app) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 4px;
+}
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .press,
+  .press:active {
+    transition: none;
+    transform: none;
+  }
+  .sheet,
+  .sheet-backdrop,
+  .popover,
+  .badge-pop,
+  .like-pop,
+  .toast,
+  .skeleton,
+  .rise-in,
+  .check-draw,
+  .ring-fill,
+  .progress-line,
+  .ptr-spin,
+  .tab-ink,
+  .comic-panel,
+  .comic-bubble,
+  .para-note,
+  .milestone-sun,
+  .kind-tile svg {
+    animation: none !important;
+  }
+  .lift > svg,
+  .lift .lift-target {
+    transition: none;
+    transform: none !important;
+  }
+}
+
+/* Spot illustrations: one small living detail each, still under reduced motion. */
+.spot-spark {
+  animation: spot-twinkle 2.8s ease-in-out infinite;
+}
+.spot-bob {
+  animation: spot-bob 3.6s ease-in-out infinite;
+}
+.spot-write {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: spot-write 1.4s 300ms ease-out forwards;
+}
+.spot-turn {
+  animation: spot-turn 6s ease-in-out infinite;
+}
+@keyframes spot-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes spot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@keyframes spot-write {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes spot-turn {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spot-spark,
+  .spot-bob,
+  .spot-turn {
+    animation: none;
+  }
+  .spot-write {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* The home hero's illustration settles in once, gently. */
+.hero-art {
+  animation: hero-rise 900ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes hero-rise {
+  from {
+    transform: translateY(14px);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-art {
+    animation: none;
+  }
+}
+
+/* Reader preferences (Aa): size, tone and typeface, set by the reader on this device. */
+.reader[data-size='s'] .manuscript {
+  font-size: 16px;
+}
+.reader[data-size='l'] .manuscript {
+  font-size: 21px;
+}
+.reader[data-size='xl'] .manuscript {
+  font-size: 24px;
+}
+.reader[data-face='sans'] .reading-body {
+  font-family: var(--font-ui-family);
+}
+.reader[data-tone='sepia'],
+.reader[data-tone='sepia'] * {
+  --bg-canvas: #f4ecd8;
+  --bg-app: #ece2c9;
+  --bg-hover: #e6d9bb;
+  --text-primary: #3b2f22;
+  --text-secondary: #5a4a38;
+  --border-subtle: #ddcfae;
+  /* Tailwind's colour variables resolve at the root: point them at this page's tones too */
+  --color-canvas: #f4ecd8;
+  --color-app: #ece2c9;
+  --color-hover: #e6d9bb;
+  --color-primary: #3b2f22;
+  --color-secondary: #5a4a38;
+  --color-subtle: #ddcfae;
+}
+.reader[data-tone='night'],
+.reader[data-tone='night'] * {
+  --bg-canvas: #1b1a18;
+  --bg-app: #23221f;
+  --bg-hover: #2c2b27;
+  --bg-raised: #2a2925;
+  --bg-selected: #3a3226;
+  --text-primary: #e9e3d6;
+  --text-secondary: #bdb5a6;
+  --text-tertiary: #9a9283;
+  --text-accent: #e9a183;
+  --border-subtle: #34322d;
+  --border-control: #5a564d;
+  --color-canvas: #1b1a18;
+  --color-app: #23221f;
+  --color-hover: #2c2b27;
+  --color-raised: #2a2925;
+  --color-selected: #3a3226;
+  --color-primary: #e9e3d6;
+  --color-secondary: #bdb5a6;
+  --color-tertiary: #9a9283;
+  --color-accent: #e9a183;
+  --color-subtle: #34322d;
+  --color-control: #5a564d;
+}
+
+/* Editor panels slide in: up from the bottom on phones, in from the right beside the manuscript. */
+.panel {
+  animation: sheet-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (min-width: 640px) {
+  .panel {
+    animation-name: panel-in;
+  }
+}
+@keyframes panel-in {
+  from {
+    transform: translateX(32px);
+  }
+  to {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}

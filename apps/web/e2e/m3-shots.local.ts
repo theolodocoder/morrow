@@ -1,0 +1,32 @@
+import { chromium } from '@playwright/test'
+const b = await chromium.launch()
+const c = await b.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })
+const p = await c.newPage()
+await p.goto('http://localhost:3000/sign-up')
+await p.getByLabel('Name').fill('Ama Owusu')
+await p.getByLabel('Email').fill('s-' + Date.now() + '@example.test')
+await p.getByLabel('Password').fill('correct horse battery staple')
+await p.getByRole('button', { name: 'Create account' }).click()
+await p.waitForURL(/library/)
+await p.getByRole('button', { name: 'New work' }).first().click()
+await p.getByLabel('Title').fill('The Salt Orchard')
+await p.getByRole('button', { name: 'Create' }).click()
+await p.waitForURL(/chapters/)
+await p.getByRole('status').filter({ hasText: 'Saved' }).waitFor()
+await p.getByRole('textbox', { name: /manuscript/ }).click()
+await p.keyboard.type('She stood at the gate for a long time, and the orchard looked back at her.')
+await p.getByRole('button', { name: /Version: Main/ }).click()
+await p.getByRole('button', { name: /New branch from/ }).click()
+await p.getByLabel('Name').fill('The Lighthouse Ending')
+await p.waitForTimeout(200)
+await p.screenshot({
+  path: '/private/tmp/claude-501/-Users-promiseokafor-Desktop-Workspaces-prodev-morrow-private/8b2e9415-0971-4dc0-ba7a-4cbb1aa251d9/scratchpad/shots/m3-new-branch.png',
+})
+await p.getByRole('button', { name: 'Create branch' }).click()
+await p.getByRole('button', { name: /Version: The Lighthouse Ending/ }).waitFor()
+await p.getByRole('button', { name: /Version: The Lighthouse Ending/ }).click()
+await p.waitForTimeout(300)
+await p.screenshot({
+  path: '/private/tmp/claude-501/-Users-promiseokafor-Desktop-Workspaces-prodev-morrow-private/8b2e9415-0971-4dc0-ba7a-4cbb1aa251d9/scratchpad/shots/m3-switcher.png',
+})
+await b.close()
