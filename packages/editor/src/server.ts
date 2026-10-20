@@ -86,3 +86,28 @@ export function updateDocumentContent(doc: Y.Doc, json: PMNode, origin: unknown 
     updateYFragment(doc, doc.getXmlFragment(CONTENT_FIELD), node, { mapping: new Map(), isOMark: new Map() })
   }, origin)
 }
+
+/**
+ * A document's stored form from ProseMirror JSON: the Yjs state plus its projection. Used to seed content the server
+ * writes itself (an accepted next-chapter proposal, imported public-domain books).
+ */
+export function stateFromJSON(json: PMNode): { state: Uint8Array } & Projection {
+  const doc = documentFromJSON(json)
+  return { state: Y.encodeStateAsUpdate(doc), ...project(doc) }
+}
+
+/** Plain text (as a reader typed it) to paragraphs, with stable block ids derived from `idPrefix`. */
+export function paragraphsFromText(text: string, idPrefix: string): PMNode {
+  const paras = text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s*\n\s*/g, ' ').trim())
+    .filter(Boolean)
+  return {
+    type: 'doc',
+    content: (paras.length ? paras : ['']).map((t, i) => ({
+      type: 'paragraph',
+      attrs: { id: `${idPrefix}:p${i}` },
+      ...(t ? { content: [{ type: 'text', text: t }] } : {}),
+    })),
+  }
+}

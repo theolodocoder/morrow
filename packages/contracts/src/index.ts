@@ -1268,12 +1268,20 @@ export const ContributionState = z.object({
 export type ContributionState = z.infer<typeof ContributionState>
 
 // ---- Public participation (M6) ----
-export const SuggestionInput = z.object({
-  publicPath: z.string().min(3).max(200),
-  chapterSlug: z.string().min(1).max(240),
-  title: z.string().trim().min(1).max(200),
-  explanation: z.string().trim().max(4000).default(''),
-})
+export const SuggestionInput = z
+  .object({
+    publicPath: z.string().min(3).max(200),
+    /** 'edit' changes a published chapter; 'chapter' offers the next one (story chains, P-061) */
+    kind: z.enum(['edit', 'chapter']).default('edit'),
+    chapterSlug: z.string().min(1).max(240).optional(),
+    title: z.string().trim().min(1).max(200),
+    explanation: z.string().trim().max(4000).default(''),
+    /** the chapter itself, for kind 'chapter' */
+    body: z.string().trim().max(60000).default(''),
+  })
+  .refine((v) => (v.kind === 'edit' ? !!v.chapterSlug : v.body.length > 0), {
+    message: 'An edit needs a chapter; a new chapter needs its text.',
+  })
 
 // ---- Plans and entitlements (PRD FR-033/034) ----
 export const PlanLimitsSchema = z.object({

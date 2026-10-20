@@ -19,7 +19,7 @@ async function signUp(p: Page, name: string, onboard: 'Continue' | 'Skip for now
 test('A stranger suggests an edit from the published chapter; the writer accepts; drafts stay private', async ({
   browser,
 }) => {
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   const author = await (await browser.newContext()).newPage()
   await signUp(author, 'Ama Owusu', 'Continue')
   await author.getByRole('button', { name: 'New work' }).first().click()
@@ -89,4 +89,22 @@ test('A stranger suggests an edit from the published chapter; the writer accepts
   // The stranger sees the outcome.
   await stranger.goto('/app/suggestions')
   await expect(stranger.getByRole('link', { name: /Name the roots/ })).toContainText('Accepted')
+
+  // Story chain (P-061): the stranger offers the next chapter; accepted, it joins the work.
+  await stranger.goto(link)
+  await stranger.getByRole('button', { name: 'Contribute' }).click()
+  const chainSheet = stranger.getByRole('dialog', { name: /Help shape/ })
+  await chainSheet.getByRole('button', { name: /Write the next chapter/ }).click()
+  await chainSheet.getByLabel('Chapter title').fill('The Second Frost')
+  await chainSheet.getByLabel('The chapter').fill('The orchard woke white.\n\nNobody spoke of the salt.')
+  await chainSheet.getByRole('button', { name: 'Continue' }).click()
+  await stranger.getByRole('button', { name: 'Submit for review' }).click()
+  await expect(stranger.getByText('Submitted', { exact: true })).toBeVisible()
+  await author.goto(`/app/works/${workId}/proposals`)
+  await author.getByRole('link', { name: /The Second Frost/ }).click()
+  await author.getByRole('button', { name: 'Accept…' }).click()
+  await author.getByRole('button', { name: 'Accept', exact: true }).click()
+  await expect(author.getByText('Accepted', { exact: true })).toBeVisible()
+  await author.goto(`/app/works/${workId}`)
+  await expect(author.getByRole('link', { name: /The Second Frost/ })).toBeVisible()
 })

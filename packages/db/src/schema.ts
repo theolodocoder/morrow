@@ -520,7 +520,14 @@ export const publications = pgTable(
 )
 
 // ---- Proposals (PRD FR-014/015, architecture §9) ----
-export const proposalKind = pgEnum('proposal_kind', ['edit', 'outline', 'character', 'research', 'feedback'])
+export const proposalKind = pgEnum('proposal_kind', [
+  'edit',
+  'outline',
+  'character',
+  'research',
+  'feedback',
+  'chapter',
+])
 export const proposalStatus = pgEnum('proposal_status', [
   'draft',
   'submitted',

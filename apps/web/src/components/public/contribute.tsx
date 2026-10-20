@@ -5,14 +5,14 @@ import { Form } from 'react-aria-components'
 import type { ContributionState, ProposalDetail } from '@morrow/contracts'
 import { Button } from '@/components/ui/button'
 import { InlineAlert } from '@/components/ui/inline-alert'
-import { ArrowLeftIcon, CheckIcon, PeopleIcon, ProposeIcon } from '@/components/ui/icons'
+import { ArrowLeftIcon, CheckIcon, PenIcon, PeopleIcon, ProposeIcon } from '@/components/ui/icons'
 import { Sheet } from '@/components/ui/sheet'
 import { TextField } from '@/components/ui/text-field'
 import { api, ClientApiError } from '@/lib/client-api'
 import { routes } from '@/lib/routes'
 import { SignupPrompt } from './signup-wall'
 
-type Step = 'choose' | 'suggest' | 'ask' | 'sent'
+type Step = 'choose' | 'suggest' | 'chain' | 'ask' | 'sent'
 
 const card =
   'press group flex w-full items-start gap-3 rounded-lg border border-subtle bg-canvas p-4 text-left outline-none transition-colors hover:border-control focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-subtle'
@@ -69,6 +69,29 @@ export function ContributeButton({
           chapterSlug: chapter,
           title: String(f.get('title') ?? ''),
           explanation: String(f.get('explanation') ?? ''),
+        },
+      })
+      router.push(routes.proposal(p.workId, p.id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'That didn’t work.')
+      setBusy(false)
+    }
+  }
+
+  async function chain(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    setBusy(true)
+    setError(null)
+    try {
+      const p = await api<ProposalDetail>('/suggestions', {
+        method: 'POST',
+        body: {
+          publicPath,
+          kind: 'chapter',
+          title: String(f.get('title') ?? ''),
+          explanation: String(f.get('explanation') ?? ''),
+          body: String(f.get('body') ?? ''),
         },
       })
       router.push(routes.proposal(p.workId, p.id))
@@ -144,6 +167,19 @@ export function ContributeButton({
                   </span>
                 </span>
               </button>
+              {state?.openToSuggestions && (
+                <button type="button" className={card} onClick={() => setStep('chain')}>
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-selected text-accent">
+                    <PenIcon size={18} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block font-medium text-primary">Write the next chapter</span>
+                    <span className="block text-[13px] text-secondary">
+                      Keep the story going. If {authorName} accepts it, it joins the work, credited to you.
+                    </span>
+                  </span>
+                </button>
+              )}
               <button type="button" className={card} disabled={state?.pending} onClick={() => setStep('ask')}>
                 <span className="grid size-10 shrink-0 place-items-center rounded-full bg-selected text-accent">
                   <PeopleIcon size={18} />
@@ -185,6 +221,35 @@ export function ContributeButton({
               <TextField name="explanation" label="Why (optional)" maxLength={4000} />
               <Button type="submit" variant="primary" isDisabled={busy} className="self-end">
                 {busy ? 'Starting…' : 'Start editing'}
+              </Button>
+            </Form>
+          ) : step === 'chain' ? (
+            <Form onSubmit={chain} className="flex flex-col gap-4">
+              {back}
+              <TextField
+                name="title"
+                label="Chapter title"
+                isRequired
+                maxLength={200}
+                placeholder="What happened next"
+              />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-primary">The chapter</span>
+                <textarea
+                  name="body"
+                  required
+                  rows={10}
+                  maxLength={60000}
+                  placeholder="Leave a blank line between paragraphs."
+                  className="rounded-md border border-control bg-canvas px-3 py-2 font-manuscript text-base text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-focus"
+                />
+              </label>
+              <TextField name="explanation" label={`A note to ${authorName} (optional)`} maxLength={4000} />
+              <p className="text-[13px] text-secondary">
+                You can keep editing it before you submit it for review.
+              </p>
+              <Button type="submit" variant="primary" isDisabled={busy} className="self-end">
+                {busy ? 'Saving…' : 'Continue'}
               </Button>
             </Form>
           ) : step === 'ask' ? (

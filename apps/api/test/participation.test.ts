@@ -181,3 +181,49 @@ describe('public participation (M6)', () => {
     ctx.engine.classification = { kind: 'clean' }
   })
 })
+
+describe('story chains (P-061)', () => {
+  it('a reader offers the next chapter; accepted, it joins the work as a new chapter, credited to them', async () => {
+    const s = await openWork('propose')
+    const tolu = await signUp(ctx.app, 'Tolu Chain')
+    const res = await tolu.call('POST', '/api/v1/suggestions', {
+      publicPath: s.publicPath,
+      kind: 'chapter',
+      title: 'Second Frost',
+      explanation: 'Where it goes next.',
+      body: 'The orchard woke white.\n\nNobody spoke of the salt.',
+    })
+    expect(res.statusCode).toBe(201)
+    const p = res.json() as { id: string; kind: string; actions: string[] }
+    expect(p.kind).toBe('chapter')
+    // a chapter needs its text
+    expect(
+      (
+        await tolu.call('POST', '/api/v1/suggestions', {
+          publicPath: s.publicPath,
+          kind: 'chapter',
+          title: 'Empty',
+        })
+      ).statusCode,
+    ).toBe(400)
+    expect((await tolu.call('POST', `/api/v1/proposals/${p.id}/submit`, {})).statusCode).toBe(200)
+    const accepted = await s.owner.call(
+      'POST',
+      `/api/v1/proposals/${p.id}/accept`,
+      { note: 'Yes!' },
+      { 'idempotency-key': crypto.randomUUID() },
+    )
+    expect(accepted.statusCode).toBe(200)
+    const chapters = (
+      (await s.owner.call('GET', `/api/v1/works/${s.workId}/chapters`)).json() as {
+        items: { title: string; documentId: string }[]
+      }
+    ).items
+    expect(chapters.map((c) => c.title)).toEqual(['Spoiler Title', 'Second Frost'])
+    const [proj] = await ctx.db.db
+      .select()
+      .from(documentProjections)
+      .where(eq(documentProjections.documentId, chapters[1]!.documentId))
+    expect(JSON.stringify(proj?.contentJson)).toContain('Nobody spoke of the salt.')
+  })
+})

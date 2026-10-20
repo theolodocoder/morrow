@@ -30,6 +30,7 @@ import {
   type ProposalStatus,
 } from '@morrow/domain'
 import {
+  branches,
   chapters,
   documentProjections,
   documentSnapshots,
@@ -40,9 +41,14 @@ import {
   publications,
   toAccessContext,
   user,
+  editSessions,
+  works,
   type Database,
   type Transaction,
 } from '@morrow/db'
+import { paragraphsFromText, stateFromJSON } from '@morrow/editor/server'
+import { createHash } from 'node:crypto'
+import { createChapterIn } from './chapters.ts'
 import { SCHEMA_VERSION, diffDocuments, type BlockChange, type PMNode } from '@morrow/editor'
 import type { CollabGateway } from '../collab-gateway.ts'
 import { requireWork } from '../access.ts'
@@ -488,6 +494,43 @@ export const proposalRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Colla
     )
   }
 
+  async function addChapterFromProposal(p: typeof proposals.$inferSelect, reviewerId: string) {
+    const [w] = await db.select().from(works).where(eq(works.id, p.workId))
+    const [branch] = await db.select().from(branches).where(eq(branches.id, w!.defaultBranchId!))
+    const chapter = await createChapterIn(db, branch!, reviewerId, { title: p.title })
+    const seeded = stateFromJSON(paragraphsFromText(p.body, chapter.documentId))
+    const [snap] = await db
+      .insert(documentSnapshots)
+      .values({
+        documentId: chapter.documentId,
+        workId: p.workId,
+        state: Buffer.from(seeded.state),
+        contentJson: seeded.contentJson,
+        contentHash: createHash('sha256').update(JSON.stringify(seeded.contentJson)).digest('hex'),
+        wordCount: seeded.wordCount,
+        reason: 'proposal_applied',
+        label: 'From a proposal',
+        createdBy: p.authorId,
+      })
+      .returning({ id: documentSnapshots.id })
+    await collab.forkSnapshot({
+      snapshotId: snap!.id,
+      targetDocumentId: chapter.documentId,
+      workId: p.workId,
+    })
+    // Credit (attribution is from trusted server-side sessions): the chapter is the proposal author's writing.
+    const now = new Date()
+    await db.insert(editSessions).values({
+      documentId: chapter.documentId,
+      workId: p.workId,
+      userId: p.authorId,
+      startedAt: now,
+      endedAt: now,
+      updateCount: 1,
+    })
+    return chapter.id
+  }
+
   app.post(
     '/proposals/:proposalId/accept',
     { schema: { params: Params, body: AcceptProposalInput, response: { 200: ProposalDetail } } },
@@ -503,7 +546,11 @@ export const proposalRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Colla
           if (!locked || nextStatus(locked.status, 'accept') === null)
             throw conflict('This proposal is no longer awaiting review.')
           let extra: Partial<typeof proposals.$inferInsert> = {}
-          if (locked.kind === 'edit') {
+          if (locked.kind === 'chapter') {
+            // Story chains (P-061): the proposal becomes the work's next chapter, credited to its author.
+            const chapterId = await addChapterFromProposal(locked, userId)
+            extra = { chapterId }
+          } else if (locked.kind === 'edit') {
             const target = await targetDocument(locked)
             const result = await collab.applyProposal({
               ...engineInput(locked, target, userId),
@@ -574,7 +621,34 @@ export const proposalRoutes: FastifyPluginAsyncZod<{ db: Database; collab: Colla
       if (w.ownerId === userId) throw conflict('It’s your work: edit it directly.')
       if (!can({ userId }, 'proposal.create', toAccessContext(row))) throw forbidden()
       if (await blockedBetween(db, userId, w.ownerId)) throw forbidden()
-      const suffix = req.body.chapterSlug.slice(-6)
+      if (req.body.kind === 'chapter') {
+        // Story chains (P-061): offer the next chapter as text; it's reviewed like any proposal.
+        await spamCheck(db, userId, `${req.body.explanation}\n${req.body.body}`, 'proposal')
+        const created = await db.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(proposals)
+            .values({
+              workId: w.id,
+              kind: 'chapter',
+              authorId: userId,
+              title: req.body.title,
+              explanation: req.body.explanation,
+              body: req.body.body,
+            })
+            .returning()
+          await recordActivity(tx, {
+            workId: w.id,
+            actorId: userId,
+            type: 'proposal.created',
+            subjectType: 'proposal',
+            subjectId: row!.id,
+            data: { kind: 'chapter', outside: true },
+          })
+          return row!
+        })
+        return reply.status(201).send(await detail(created, userId))
+      }
+      const suffix = req.body.chapterSlug!.slice(-6)
       const pubs = await db
         .select()
         .from(publications)

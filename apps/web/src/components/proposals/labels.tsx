@@ -22,6 +22,12 @@ export const KIND_OPTIONS: { id: ProposalSummary['kind']; label: string; descrip
   { id: 'character', label: 'Character idea', description: 'Propose a character, or a change to one.' },
   { id: 'research', label: 'Research note', description: 'Facts, sources or background the work could use.' },
   { id: 'feedback', label: 'Feedback', description: 'Editorial thoughts for the author.' },
+  {
+    id: 'chapter',
+    label: 'Next chapter',
+    description:
+      'Write what comes next. If it’s accepted, it joins the work as a new chapter, credited to you.',
+  },
 ]
 export const KIND_LABEL = Object.fromEntries(KIND_OPTIONS.map((k) => [k.id, k.label])) as Record<
   ProposalSummary['kind'],

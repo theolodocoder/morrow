@@ -17,8 +17,11 @@ export const PROPOSAL_STATUSES = [
 ] as const
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number]
 
-/** PRD FR-014 contribution types. `edit` changes a chapter; the others are reviewed notes that credit the author. */
-export const PROPOSAL_KINDS = ['edit', 'outline', 'character', 'research', 'feedback'] as const
+/**
+ * PRD FR-014 contribution types. `edit` changes a chapter; `chapter` (story chains, P-061) adds the next chapter when
+ * accepted; the others are reviewed notes that credit the author.
+ */
+export const PROPOSAL_KINDS = ['edit', 'outline', 'character', 'research', 'feedback', 'chapter'] as const
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number]
 
 export type ProposalAction =
