@@ -371,6 +371,40 @@ export const invitations = pgTable(
 )
 
 /**
+ * "What if" reader polls (P-062): a question at the end of a chapter, with two to four answers. Readers vote once
+ * (and may change their mind); the writer sees which way readers lean. One poll per chapter.
+ */
+export const chapterPolls = pgTable('chapter_polls', {
+  id: id(),
+  workId: uuid('work_id')
+    .notNull()
+    .references(() => works.id, { onDelete: 'cascade' }),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .unique()
+    .references(() => chapters.id, { onDelete: 'cascade' }),
+  question: text('question').notNull(),
+  options: text('options').array().notNull(),
+  closesAt: timestamp('closes_at', { withTimezone: true }),
+  createdBy: text('created_by').notNull(),
+  createdAt: createdAt(),
+})
+export const pollVotes = pgTable(
+  'poll_votes',
+  {
+    pollId: uuid('poll_id')
+      .notNull()
+      .references(() => chapterPolls.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    option: integer('option').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.pollId, t.userId] })],
+)
+
+/**
  * Words written per person per day (P-055), reported by the editor from the writer's own edits (never others' in the
  * same document). `day` is the writer's local date, so a streak follows their clock, not the server's.
  */

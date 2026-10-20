@@ -403,3 +403,53 @@ describe('paragraph comments (P-054)', () => {
     expect((await pub(`/reading/${w.publicPath}/comments?chapter=nope-zzzzzz&block=b1`)).statusCode).toBe(404)
   })
 })
+
+describe('"what if" reader polls (P-062)', () => {
+  it('the writer asks; readers vote once (changeable); counts appear after voting; answers lock once voted', async () => {
+    const ama = await person('Ama Polls')
+    const bo = await person('Bo Polls')
+    const cy = await person('Cy Polls')
+    const w = await piece(ama, 'Crossroads', ['She stood at the fork.'])
+    const page = (await pub(`/works/${w.publicPath}`)).json() as { chapters: { slug: string }[] }
+    const slug = page.chapters[0]!.slug
+    const chapterId = (
+      (await ama.call('GET', `/api/v1/works/${w.id}/chapters`)).json() as { items: { id: string }[] }
+    ).items[0]!.id
+    const set = await ama.call('PUT', `/api/v1/chapters/${chapterId}/poll`, {
+      question: 'Which way should she go?',
+      options: ['Left, to the sea', 'Right, to the city'],
+      closesInDays: 7,
+    })
+    expect(set.statusCode).toBe(200)
+    // readers can't set polls
+    expect(
+      (await bo.call('PUT', `/api/v1/chapters/${chapterId}/poll`, { question: 'Mine?', options: ['a', 'b'] }))
+        .statusCode,
+    ).toBe(404)
+
+    const before = (await pub(`/reading/${w.publicPath}/chapters/${slug}/poll`)).json() as {
+      poll: { options: { votes: number | null }[] }
+    }
+    expect(before.poll.options.map((o) => o.votes)).toEqual([null, null]) // no herding before you vote
+    const vote = (u: User, option: number) =>
+      u.call('POST', `/api/v1/reading/${w.publicPath}/chapters/${slug}/poll/vote`, { option })
+    await vote(bo, 0)
+    await vote(cy, 1)
+    const changed = (await vote(bo, 1)).json() as {
+      myVote: number
+      total: number
+      options: { votes: number }[]
+    }
+    expect(changed).toMatchObject({ myVote: 1, total: 2 })
+    expect(changed.options.map((o) => o.votes)).toEqual([0, 2])
+    // with votes in, the answers can't change under people
+    expect(
+      (
+        await ama.call('PUT', `/api/v1/chapters/${chapterId}/poll`, {
+          question: 'Which way?',
+          options: ['Up', 'Down'],
+        })
+      ).statusCode,
+    ).toBe(409)
+  })
+})

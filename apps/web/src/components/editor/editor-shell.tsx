@@ -24,6 +24,7 @@ import type { Branch, Chapter, Work } from '@morrow/contracts'
 import { BranchSwitcher } from './branch-switcher'
 import { WorkSettingsDialog } from './work-settings-dialog'
 import { CoverDialog } from './cover-dialog'
+import { PollDialog } from './poll-dialog'
 import { PublishDialog } from './publish-dialog'
 import { ProposeDialog } from '@/components/proposals/propose-dialog'
 import { ActionMenu } from '@/components/ui/menu'
@@ -72,6 +73,7 @@ export function EditorShell({
   const [shareOpen, setShareOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [coverOpen, setCoverOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
   const [proposeOpen, setProposeOpen] = useState(false)
   const [betaFeedbackOpen, setBetaFeedbackOpen] = useState(false)
@@ -285,6 +287,12 @@ export function EditorShell({
             ...(work.capabilities.includes('work.manage_settings')
               ? [
                   {
+                    id: 'poll',
+                    label: 'Ask readers (poll)…',
+                    icon: <ProposeIcon size={16} />,
+                    onAction: () => setPollOpen(true),
+                  },
+                  {
                     id: 'cover',
                     label: 'Cover…',
                     icon: <ImageIcon size={16} />,
@@ -382,6 +390,7 @@ export function EditorShell({
         )}
       </div>
       <WorkSettingsDialog work={work} isOpen={settingsOpen} onOpenChange={setSettingsOpen} />
+      <PollDialog chapterId={chapter.id} isOpen={pollOpen} onOpenChange={setPollOpen} />
       <CoverDialog
         workId={work.id}
         title={work.title}

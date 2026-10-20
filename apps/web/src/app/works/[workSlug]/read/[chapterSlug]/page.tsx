@@ -5,6 +5,7 @@ import { RichText } from '@/components/reader/rich-text'
 import { ReadingProgress } from '@/components/reader/reading-progress'
 import { SuggestButton } from '@/components/proposals/suggest-button'
 import { ParagraphComments } from '@/components/reader/paragraph-comments'
+import { PollCard } from '@/components/reader/poll-card'
 import { publicApi, publicApiAsViewer } from '@/lib/public-api'
 import { WorkActions } from '@/components/public/work-actions'
 import { ViewPing } from '@/components/reader/view-ping'
@@ -63,6 +64,7 @@ export default async function ReadChapterPage({ params }: Params) {
         <p aria-hidden="true" className="mt-16 text-center text-ornament">
           ⁂
         </p>
+        <PollCard publicPath={work.publicPath} chapterSlug={chapter.slug} />
         <div className="mt-10 flex justify-center font-ui">
           <WorkActions
             publicPath={work.publicPath}

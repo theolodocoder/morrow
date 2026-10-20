@@ -38,6 +38,7 @@ import { contributionRoutes } from './routes/contributions.ts'
 import { accountRoutes } from './routes/account.ts'
 import { waitlistRoutes } from './routes/waitlist.ts'
 import { writingRoutes } from './routes/writing.ts'
+import { pollRoutes, publicPollRoutes } from './routes/polls.ts'
 import { badgeRoutes } from './routes/badges.ts'
 import { dashboardRoutes } from './routes/dashboard.ts'
 import { loadRestriction, profiles } from '@morrow/db'
@@ -261,12 +262,14 @@ export async function buildApp({ env, db, collab, email, logger }: AppDeps) {
       await v1.register(accountRoutes, { db, auth })
       await v1.register(waitlistRoutes, { db })
       await v1.register(writingRoutes, { db })
+      await v1.register(pollRoutes, { db })
     },
     { prefix: '/api/v1' },
   )
   await app.register(publicInvitationRoutes, { db, env, prefix: '/api/v1/public' })
   await app.register(publicProfileRoutes, { db, prefix: '/api/v1/public' })
   await app.register(publicReadingRoutes, { db, prefix: '/api/v1/public' })
+  await app.register(publicPollRoutes, { db, prefix: '/api/v1/public' })
   await app.register(discoveryRoutes, { db, cacheMs: env.DISCOVER_CACHE_MS, prefix: '/api/v1/public' })
   await app.register(publicPlanRoutes, { db, prefix: '/api/v1/public' })
   // Signed-out views are counted with a daily keyed hash; the key is derived so it's never the session secret itself.

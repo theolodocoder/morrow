@@ -62,6 +62,15 @@ test('prompt → write with a goal → schedule and open call → paragraph comm
   await settings.getByText('Illustrator', { exact: true }).click()
   await settings.getByRole('button', { name: 'Save settings' }).click()
   await expect(settings).toHaveCount(0)
+  // A "what if" poll for the end of the chapter.
+  await author.getByRole('button', { name: 'More actions' }).click()
+  await author.getByRole('menuitem', { name: 'Ask readers (poll)…' }).click()
+  const pollDialog = author.getByRole('dialog', { name: 'Ask readers: what if?' })
+  await pollDialog.getByLabel('Question').fill('Who lit the lights?')
+  await pollDialog.getByLabel('Answer 1').fill('The keeper’s ghost')
+  await pollDialog.getByLabel('Answer 2').fill('A child with matches')
+  await pollDialog.getByRole('button', { name: 'Ask readers' }).click()
+  await expect(pollDialog).toHaveCount(0)
   await author.getByRole('button', { name: 'Publish', exact: true }).click()
   await author.getByRole('dialog').getByText('Public', { exact: true }).click()
   await author.getByRole('dialog').getByRole('button', { name: 'Continue' }).click()
@@ -89,6 +98,16 @@ test('prompt → write with a goal → schedule and open call → paragraph comm
   expect(await axe(reader)).toEqual([])
   await reader.keyboard.press('Escape')
   await expect(reader.getByRole('button', { name: '1 comment on this paragraph' })).toBeVisible()
+
+  // The writer's poll at the end of the chapter: vote, then see how others answered.
+  const poll = reader.getByRole('region', { name: 'Who lit the lights?' })
+  await expect(poll).toContainText('Vote to see how others answered.')
+  await poll.getByRole('button', { name: /A child with matches/ }).click()
+  await expect(poll.getByRole('button', { name: /A child with matches/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(poll).toContainText('100%')
 
   // Discover gathers open calls; signed in, Home offers "For you".
   await reader.goto('/discover')

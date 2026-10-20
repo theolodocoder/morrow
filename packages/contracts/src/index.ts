@@ -1210,6 +1210,25 @@ export const DecideAppealInput = z.object({
 })
 export const BlockInput = z.object({ username: z.string().min(3).max(30) })
 
+// ---- "What if" reader polls (P-062) ----
+export const PollInput = z.object({
+  question: z.string().trim().min(3).max(200),
+  options: z.array(z.string().trim().min(1).max(80)).min(2).max(4),
+  /** days until it closes; null = open until removed */
+  closesInDays: z.number().int().min(1).max(60).nullable().default(null),
+})
+export const Poll = z.object({
+  question: z.string(),
+  /** vote counts are present once the viewer has voted, the poll has closed, or the viewer is the writer */
+  options: z.array(z.object({ label: z.string(), votes: z.number().int().nullable() })),
+  total: z.number().int(),
+  myVote: z.number().int().nullable(),
+  closesAt: z.iso.datetime({ offset: true }).nullable(),
+  closed: z.boolean(),
+})
+export type Poll = z.infer<typeof Poll>
+export const VoteInput = z.object({ option: z.number().int().min(0).max(3) })
+
 // ---- Weekly prompts (P-059) ----
 export const WeeklyPrompt = z.object({
   title: z.string(),
