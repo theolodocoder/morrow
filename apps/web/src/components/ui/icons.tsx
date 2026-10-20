@@ -49,6 +49,30 @@ export const ImageIcon = (p: IconProps) => (
     <circle cx="12.75" cy="7.25" r="1.25" />
   </Icon>
 )
+export const HeadphonesIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 13v-2.5a6.5 6.5 0 0 1 13 0V13" />
+    <rect x="3.5" y="12" width="3" height="5" rx="1.2" />
+    <rect x="13.5" y="12" width="3" height="5" rx="1.2" />
+  </Icon>
+)
+export const MicIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="7.5" y="2.5" width="5" height="9" rx="2.5" />
+    <path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5M7 17.5h6" />
+  </Icon>
+)
+export const MicOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12.5 8.2V5a2.5 2.5 0 0 0-4.9-.7M7.5 7.5V9a2.5 2.5 0 0 0 4 2" />
+    <path d="M15.5 9.5a5.5 5.5 0 0 1-.6 2.5M4.5 9.5a5.5 5.5 0 0 0 8.3 4.7M10 15v2.5M7 17.5h6M3 3l14 14" />
+  </Icon>
+)
+export const PhoneOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 11.5c3.9-3.3 10.1-3.3 14 0l-1.6 2.4-3-1v-2.2a8 8 0 0 0-4.8 0v2.2l-3 1L3 11.5Z" />
+  </Icon>
+)
 export const CloseIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="m5.5 5.5 9 9m0-9-9 9" />

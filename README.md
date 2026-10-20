@@ -53,3 +53,13 @@ Integration tests create their own throwaway databases (`morrow_api_test`, `morr
 ## Environment variables
 
 `.env.example` documents every variable. It contains no real values, and real secrets never go into the repository.
+
+## Voice rooms
+
+Collaborators on the same chapter can talk while they write. When someone else is on the chapter, a headphones button appears in the editor bar. Join (you start muted), then press ⌘/Ctrl+Shift+M to unmute or mute.
+
+- **Signalling** (offers, answers, ICE candidates) travels over the chapter's existing collab connection, as Hocuspocus stateless messages. Only people who can open the chapter can join. Collab stamps every relayed message with the sender's verified user id, and never passes a message outside the chapter's room. People where either has blocked the other never see or signal each other (`apps/collab/src/voice.ts`).
+- **Audio** goes straight between browsers over WebRTC. It is never recorded and never passes through Morrow's servers.
+- **Size limit:** each room is a full mesh, capped at 8 speakers (`MAX_SPEAKERS`). Bigger rooms need an SFU such as LiveKit.
+- **ICE servers** come from `NEXT_PUBLIC_ICE_SERVERS`. With none, calls work on localhost and simple networks. Across the internet, most networks need a TURN server, for example coturn.
+- **Microphone permission:** the site's `Permissions-Policy` allows the microphone on Morrow's own pages only.

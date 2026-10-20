@@ -17,7 +17,8 @@ const config: NextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          // the microphone is for voice rooms (P-064), on Morrow's own pages only; never in embeds
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
           // Browsers ignore HSTS over plain HTTP, so this is harmless locally and binding in production.
           ...(process.env.NODE_ENV === 'production'
             ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' }]

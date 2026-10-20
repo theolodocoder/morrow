@@ -28,7 +28,25 @@ export interface Collab {
   onSnapshot: (cb: () => void) => () => void
   /** someone added or changed comments or reactions on this document (FR-016/017) */
   onFeedback: (cb: (what: 'comments' | 'reactions') => void) => () => void
+  /** the chapter's voice room (P-064): messages to and from collab over this same connection */
+  voice: {
+    send: (message: object) => void
+    /** hears every voice message; replays the latest roster straight away */
+    on: (cb: (message: VoiceMessage) => void) => () => void
+  }
 }
+
+/** What collab sends about the voice room (see apps/collab/src/voice.ts). */
+export type VoiceMessage =
+  | {
+      v: 1
+      type: 'voice'
+      op: 'roster'
+      you: string | null
+      peers: { peerId: string; userId: string; muted: boolean }[]
+    }
+  | { v: 1; type: 'voice'; op: 'full'; max: number }
+  | { v: 1; type: 'voice'; op: 'signal'; from: string; fromUserId: string; data: unknown }
 
 /** Shows "Saving…" only when saving takes longer than this, so typing never causes flicker. */
 const SAVING_DELAY_MS = 1000
@@ -40,6 +58,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
   const [readOnly, setReadOnly] = useState(false)
   const snapshotListeners = useRef(new Set<() => void>())
   const feedbackListeners = useRef(new Set<(what: 'comments' | 'reactions') => void>())
+  const voiceListeners = useRef(new Set<(m: VoiceMessage) => void>())
+  const lastRoster = useRef<VoiceMessage | null>(null)
   // Bumped when the server says our access changed: the effect rebuilds the connection with a fresh ticket.
   const [generation, setGeneration] = useState(0)
 
@@ -94,7 +114,13 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         provider.disconnect()
       },
       onStateless: ({ payload }) => {
-        const event = CollabEvent.safeParse(JSON.parse(payload))
+        const raw = JSON.parse(payload) as { type?: string; op?: string }
+        if (raw.type === 'voice') {
+          if (raw.op === 'roster') lastRoster.current = raw as VoiceMessage
+          voiceListeners.current.forEach((cb) => cb(raw as VoiceMessage))
+          return
+        }
+        const event = CollabEvent.safeParse(raw)
         if (!event.success) return
         if (event.data.type === 'save_degraded') {
           degraded = true
@@ -135,6 +161,14 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         feedbackListeners.current.add(cb)
         return () => feedbackListeners.current.delete(cb)
       },
+      voice: {
+        send: (message) => provider.sendStateless(JSON.stringify({ v: 1, type: 'voice', ...message })),
+        on: (cb) => {
+          voiceListeners.current.add(cb)
+          if (lastRoster.current) cb(lastRoster.current)
+          return () => voiceListeners.current.delete(cb)
+        },
+      },
     })
 
     return () => {
@@ -144,6 +178,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       provider.destroy()
       doc.destroy()
       setCollab(null)
+      lastRoster.current = null
       setSynced(false)
       setStatus('connecting')
     }
