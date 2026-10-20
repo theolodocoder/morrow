@@ -21,3 +21,9 @@ export function compact(n: number) {
 }
 
 export const readingMinutes = (words: number) => Math.max(1, Math.round(words / 230))
+
+/** An article's byline (P-064): "Dan Denis and Scott A. Cairney", "A, B et al." (the same rule as the API's cards) */
+export function bylineOf(authors: string[]) {
+  if (authors.length <= 2) return authors.join(' and ') || 'Unknown authors'
+  return `${authors.slice(0, 2).join(', ')} et al.`
+}

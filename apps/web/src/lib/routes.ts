@@ -6,6 +6,7 @@ export const routes = {
   accountSettings: '/app/settings/account',
   comics: '/comics',
   classics: '/classics',
+  research: '/research',
   notifications: '/app/notifications',
   notificationSettings: '/app/settings/notifications',
   planSettings: '/app/settings/plan',

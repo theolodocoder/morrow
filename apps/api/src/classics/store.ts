@@ -25,6 +25,7 @@ import type { WORK_CATEGORIES } from '@morrow/contracts'
 import { ensureProfile } from '../routes/profiles.ts'
 import { slugify } from '../slug.ts'
 import type { Chapter } from './gutenberg.ts'
+import type { Article } from './jats.ts'
 
 export const LIBRARY_USER_ID = 'morrow-library'
 export const LIBRARY_USERNAME = 'morrow_library'
@@ -76,28 +77,98 @@ export async function retireClassic(db: Database, gutenbergId: number) {
   )
 }
 
+export async function articleImported(db: Database, pmcid: string) {
+  const rows = await db.execute(
+    sql`select 1 from ${works} where source->>'pmcid' = ${pmcid} and deleted_at is null`,
+  )
+  return rows.rows.length > 0
+}
+export async function retireArticle(db: Database, pmcid: string) {
+  await db.execute(
+    sql`update ${works} set deleted_at = now() where source->>'pmcid' = ${pmcid} and deleted_at is null`,
+  )
+}
+
+/**
+ * An open-access article (P-064). CC BY needs attribution and a note of what changed, so both are stored with it and
+ * shown on its page.
+ */
+export async function storeArticle(db: Database, a: Article, tags: string[] = []) {
+  return storeLibraryWork(
+    db,
+    {
+      title: a.title,
+      description: a.abstract,
+      category: 'research_paper',
+      tags: ['research', 'open access', ...tags],
+      license: a.license === 'CC0' ? 'cc0' : 'cc_by',
+      source: {
+        kind: 'open_access',
+        license: a.license,
+        licenseUrl: a.licenseUrl,
+        authors: a.authors,
+        journal: a.journal,
+        year: a.year,
+        doi: a.doi,
+        pmcid: a.pmcid,
+        url: a.doi ? `https://doi.org/${a.doi}` : `https://pmc.ncbi.nlm.nih.gov/articles/${a.pmcid}/`,
+        changes: 'Converted to Morrow’s format; figures omitted (their captions are kept).',
+      },
+    },
+    a.chapters,
+  )
+}
+
+/** A public-domain book (P-063). */
 export async function storeClassic(db: Database, book: ClassicBook, chapters: Chapter[]) {
-  if (!chapters.length) throw new Error(`${book.title}: no chapters found`)
+  return storeLibraryWork(
+    db,
+    {
+      title: book.title,
+      description: book.description,
+      category: book.category,
+      tags: book.tags,
+      license: 'cc0',
+      source: {
+        kind: 'public_domain',
+        originalAuthor: book.author,
+        year: book.year,
+        gutenbergId: book.gutenbergId,
+      },
+    },
+    chapters,
+  )
+}
+
+/** Any library work: a classic or an open-access article, with where it came from in `source`. */
+export async function storeLibraryWork(
+  db: Database,
+  meta: {
+    title: string
+    description: string
+    category: (typeof WORK_CATEGORIES)[number]
+    tags: string[]
+    license: 'cc0' | 'cc_by'
+    source: Record<string, unknown>
+  },
+  chapters: Chapter[],
+) {
+  if (!chapters.length) throw new Error(`${meta.title}: no chapters found`)
   return db.transaction(async (tx) => {
     const [w] = await tx
       .insert(works)
       .values({
         ownerId: LIBRARY_USER_ID,
-        title: book.title,
-        slug: slugify(book.title),
-        description: book.description,
-        form: book.category,
+        title: meta.title,
+        slug: slugify(meta.title),
+        description: meta.description,
+        form: meta.category,
         visibility: 'public',
-        tags: book.tags,
-        license: 'cc0',
+        tags: meta.tags,
+        license: meta.license,
         completedAt: sql`now()`,
         publishedAt: sql`now()`,
-        source: {
-          kind: 'public_domain',
-          originalAuthor: book.author,
-          year: book.year,
-          gutenbergId: book.gutenbergId,
-        },
+        source: meta.source,
       })
       .returning()
     await tx

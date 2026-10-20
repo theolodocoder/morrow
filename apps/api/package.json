@@ -11,7 +11,8 @@
     "staff": "node --env-file=../../.env --import tsx src/cli/staff.ts",
     "load-test": "node --env-file=../../.env --import tsx src/cli/load-test.ts",
     "import-classics": "node --env-file=../../.env --import tsx src/cli/import-classics.ts",
-    "seed-demo": "node --env-file=../../.env --import tsx src/cli/seed-demo.ts"
+    "seed-demo": "node --env-file=../../.env --import tsx src/cli/seed-demo.ts",
+    "import-articles": "node --env-file=../../.env --import tsx src/cli/import-articles.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "^1.7.10",

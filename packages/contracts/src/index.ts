@@ -623,9 +623,23 @@ export const PublicChapterSummary = z.object({
 })
 /** A public-domain classic (P-063): who really wrote it, and when. */
 export const ClassicInfo = z.object({ author: z.string(), year: z.number().int() })
+/** An open-access article (P-064): attribution as its licence requires, and what Morrow changed. */
+export const OpenAccessInfo = z.object({
+  authors: z.array(z.string()),
+  journal: z.string(),
+  year: z.number().int(),
+  doi: z.string().nullable(),
+  license: z.string(),
+  licenseUrl: z.string(),
+  /** the original, for "View the original" */
+  url: z.string(),
+  changes: z.string(),
+})
+export type OpenAccessInfo = z.infer<typeof OpenAccessInfo>
 export const PublicWork = z.object({
   cover: CoverConfig,
   classic: ClassicInfo.nullable(),
+  openAccess: OpenAccessInfo.nullable(),
   releaseDay: ReleaseDay.nullable(),
   openRoles: OpenRoles,
   /** anyone signed in may suggest edits (public participation) */
@@ -979,6 +993,7 @@ export const DiscoveryWork = z.object({
   title: z.string(),
   cover: CoverConfig,
   classic: z.object({ author: z.string(), year: z.number().int() }).optional(),
+  openAccess: z.object({ journal: z.string(), year: z.number().int(), license: z.string() }).optional(),
   openRoles: z.array(z.string()).optional(),
   description: z.string(),
   category: z.enum(WORK_CATEGORIES),
@@ -1006,6 +1021,8 @@ export const Discovery = z.object({
   openCalls: z.array(DiscoveryWork),
   /** public-domain classics (P-063) */
   classics: z.array(DiscoveryWork),
+  /** open-access research articles (P-064) */
+  research: z.array(DiscoveryWork),
   topics: z.array(z.object({ tag: z.string(), works: z.number().int() })),
 })
 export type Discovery = z.infer<typeof Discovery>

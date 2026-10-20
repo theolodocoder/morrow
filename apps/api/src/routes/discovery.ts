@@ -4,7 +4,7 @@
  * separate lists, labelled as such in the UI.
  */
 import { promptFor } from '../prompts.ts'
-import { classicOf } from './publishing.ts'
+import { bylineOf, classicOf, openAccessOf } from './publishing.ts'
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { sql, type SQL } from 'drizzle-orm'
@@ -97,11 +97,22 @@ export const toWork = (r: Row): DiscoveryWork => ({
   tags: r.tags,
   publicPath: `${r.slug}-${r.public_id}`,
   publishedAt: new Date(r.published_at).toISOString(),
-  // classics are credited to whoever really wrote them
+  // classics and open-access articles are credited to whoever really wrote them
   author: classicOf(r.source)
     ? { displayName: classicOf(r.source)!.author, username: null }
-    : { displayName: r.author_name, username: r.author_public ? r.author_username : null },
+    : openAccessOf(r.source)
+      ? { displayName: bylineOf(openAccessOf(r.source)!.authors), username: null }
+      : { displayName: r.author_name, username: r.author_public ? r.author_username : null },
   ...(classicOf(r.source) ? { classic: classicOf(r.source)! } : {}),
+  ...(openAccessOf(r.source)
+    ? {
+        openAccess: {
+          journal: openAccessOf(r.source)!.journal,
+          year: openAccessOf(r.source)!.year,
+          license: openAccessOf(r.source)!.license,
+        },
+      }
+    : {}),
   collaborators: Math.max(1, r.collaborators),
   wordCount: r.word_count,
   ...(r.note !== undefined ? { note: r.note } : {}),
@@ -149,39 +160,41 @@ export const discoveryRoutes: FastifyPluginAsyncZod<{ db: Database; cacheMs: num
   }): Promise<z.infer<typeof Discovery>> {
     {
       const f = filters(query)
-      const [featured, recent, popular, collaborative, seeking, topics, calls, classics] = await Promise.all([
-        rows(
-          listQuery(
-            f,
-            sql`fw.featured_at desc`,
-            6,
-            0,
-            sql`, fw.note`,
-            sql`join ${featuredWorks} fw on fw.work_id = w.id`,
+      const [featured, recent, popular, collaborative, seeking, topics, calls, classics, research] =
+        await Promise.all([
+          rows(
+            listQuery(
+              f,
+              sql`fw.featured_at desc`,
+              6,
+              0,
+              sql`, fw.note`,
+              sql`join ${featuredWorks} fw on fw.work_id = w.id`,
+            ),
           ),
-        ),
-        rows(listQuery(sql`${f} and w.source is null`, sql`w.published_at desc`, 12)),
-        rows(
-          listQuery(
-            sql`${f} and w.source is null and ${popularity} > 0`,
-            sql`${popularity} desc, w.published_at desc`,
-            8,
+          rows(listQuery(sql`${f} and w.source is null`, sql`w.published_at desc`, 12)),
+          rows(
+            listQuery(
+              sql`${f} and w.source is null and ${popularity} > 0`,
+              sql`${popularity} desc, w.published_at desc`,
+              8,
+            ),
           ),
-        ),
-        rows(
-          listQuery(
-            sql`${f} and (select count(*) from ${workMembers} m where m.work_id = w.id) > 1`,
-            sql`w.published_at desc`,
-            8,
+          rows(
+            listQuery(
+              sql`${f} and (select count(*) from ${workMembers} m where m.work_id = w.id) > 1`,
+              sql`w.published_at desc`,
+              8,
+            ),
           ),
-        ),
-        rows(listQuery(sql`${f} and w.participation <> 'none'`, sql`w.published_at desc`, 8)),
-        db.execute(
-          sql`select t as tag, count(*)::int as works from ${works} w, unnest(w.tags) t where ${findable} group by t order by works desc, t limit 20`,
-        ),
-        rows(listQuery(sql`${f} and cardinality(w.open_roles) > 0`, sql`w.published_at desc`, 8)),
-        rows(listQuery(sql`${f} and w.source is not null`, sql`w.title`, 24)),
-      ])
+          rows(listQuery(sql`${f} and w.participation <> 'none'`, sql`w.published_at desc`, 8)),
+          db.execute(
+            sql`select t as tag, count(*)::int as works from ${works} w, unnest(w.tags) t where ${findable} group by t order by works desc, t limit 20`,
+          ),
+          rows(listQuery(sql`${f} and cardinality(w.open_roles) > 0`, sql`w.published_at desc`, 8)),
+          rows(listQuery(sql`${f} and w.source->>'kind' = 'public_domain'`, sql`w.title`, 24)),
+          rows(listQuery(sql`${f} and w.source->>'kind' = 'open_access'`, sql`w.published_at desc`, 24)),
+        ])
       return {
         featured: featured.map(toWork),
         recent: recent.map(toWork),
@@ -190,6 +203,7 @@ export const discoveryRoutes: FastifyPluginAsyncZod<{ db: Database; cacheMs: num
         seekingContributors: seeking.map(toWork),
         openCalls: calls.map(toWork),
         classics: classics.map(toWork),
+        research: research.map(toWork),
         topics: topics.rows as { tag: string; works: number }[],
       }
     }

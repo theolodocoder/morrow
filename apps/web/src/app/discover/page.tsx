@@ -370,6 +370,20 @@ export default async function DiscoverPage({ searchParams }: Params) {
           i={4}
         />
         <Shelf
+          id="research"
+          title="Open research"
+          note={
+            <>
+              Openly licensed papers, credited to their authors.{' '}
+              <Link href={routes.research} className="text-accent underline underline-offset-2">
+                See them all
+              </Link>
+            </>
+          }
+          works={d.research}
+          i={4}
+        />
+        <Shelf
           id="open-calls"
           title="Looking for collaborators"
           note="Their writers want an editor, an illustrator, a co-writer… maybe you."

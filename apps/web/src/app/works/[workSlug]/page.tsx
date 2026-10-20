@@ -10,6 +10,8 @@ import { WorkActions } from '@/components/public/work-actions'
 import { ReaderComments } from '@/components/public/reader-comments'
 import { ContributeButton } from '@/components/public/contribute'
 import { RetellButton } from '@/components/public/retell-button'
+import { CiteButton } from '@/components/public/cite-button'
+import { bylineOf } from '@/lib/format'
 import { publicApi } from '@/lib/public-api'
 import { routes } from '@/lib/routes'
 import { CATEGORY_OPTIONS, LICENSE_OPTIONS, labelOf } from '@/lib/work-options'
@@ -59,6 +61,14 @@ export default async function PublicWorkPage({ params }: Params) {
                 by <span className="font-medium text-primary">{w.classic.author}</span> · {w.classic.year} ·{' '}
                 <span className="rounded-full bg-selected px-2 py-0.5 text-[12px] text-primary">
                   Public domain
+                </span>
+              </p>
+            ) : w.openAccess ? (
+              <p className="mt-3 text-[15px] text-secondary">
+                by <span className="font-medium text-primary">{bylineOf(w.openAccess.authors)}</span>
+                {w.openAccess.journal && <> · {w.openAccess.journal}</>} · {w.openAccess.year} ·{' '}
+                <span className="rounded-full bg-selected px-2 py-0.5 text-[12px] text-primary">
+                  {w.openAccess.license}
                 </span>
               </p>
             ) : (
@@ -120,6 +130,8 @@ export default async function PublicWorkPage({ params }: Params) {
           <ContinueReading publicPath={w.publicPath} chapters={w.chapters} />
           {w.classic ? (
             <RetellButton publicPath={w.publicPath} />
+          ) : w.openAccess ? (
+            <CiteButton title={w.title} info={w.openAccess} />
           ) : (
             <ContributeButton
               publicPath={w.publicPath}
@@ -129,6 +141,38 @@ export default async function PublicWorkPage({ params }: Params) {
             />
           )}
         </div>
+        {w.openAccess && (
+          // CC BY asks for credit, a link to the licence, and a note of what changed: all three, always shown
+          <aside
+            aria-label="Source and licence"
+            className="mt-5 max-w-[60ch] rounded-md border border-subtle bg-app px-4 py-3 text-[13px] text-secondary"
+          >
+            <p>
+              Originally published in{' '}
+              <span className="text-primary">{w.openAccess.journal || 'a journal'}</span> ({w.openAccess.year}
+              ) by {w.openAccess.authors.join(', ')}.{' '}
+              <a href={w.openAccess.url} className="text-accent underline underline-offset-2" rel="noopener">
+                View the original
+              </a>
+              .
+            </p>
+            <p className="mt-1">
+              Shared under{' '}
+              {w.openAccess.licenseUrl ? (
+                <a
+                  href={w.openAccess.licenseUrl}
+                  className="text-accent underline underline-offset-2"
+                  rel="noopener license"
+                >
+                  {w.openAccess.license}
+                </a>
+              ) : (
+                w.openAccess.license
+              )}
+              . {w.openAccess.changes}
+            </p>
+          </aside>
+        )}
         {(w.releaseDay !== null || w.openRoles.length > 0) && !w.completed && (
           <div className="mt-4 flex flex-col gap-2">
             {w.releaseDay !== null && <ReleaseCountdown day={w.releaseDay} />}
