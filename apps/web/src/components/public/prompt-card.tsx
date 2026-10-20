@@ -32,7 +32,12 @@ export function PromptCard({
         className="pointer-events-none absolute inset-x-0 bottom-0 h-14 w-full"
       >
         <path d="M0 52h300" stroke="var(--border-subtle)" strokeWidth="1.5" />
-        <circle cx={20 + ((7 - left) / 7) * 260} cy="52" r="14" fill="var(--decor-ornament)" opacity=".35" />
+        {/* a half sun on the line, rising: further along the further into the week */}
+        <path
+          d={`M${6 + ((7 - left) / 7) * 260} 51a14 14 0 0 1 28 0Z`}
+          fill="var(--decor-ornament)"
+          opacity=".45"
+        />
       </svg>
       <div
         className={`relative flex flex-col gap-3 ${variant === 'banner' ? 'sm:flex-row sm:items-end sm:justify-between sm:gap-8' : ''}`}

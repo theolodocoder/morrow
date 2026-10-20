@@ -22,21 +22,32 @@ const TEAM = [
   'Sofia',
 ]
 const LINES = [
-  ' The well was older than the orchard.',
-  ' Kwesi said nothing, which was how he argued.',
-  ' The ferryman counted the coins twice.',
-  ' Somewhere a gull laughed at the tide.',
-  ' She had not cried at the funeral; she cried at the bread.',
-  ' The lamp swung once, then held.',
-  ' Every root remembered the sea.',
-  ' The letters were tied with fishing line.',
-  ' Nobody owned the lighthouse, so everyone did.',
-  ' The salt tasted of their grandmother’s hands.',
-  ' Morning came in sideways.',
+  'The well was older than the orchard. ',
+  'Kwesi said nothing, which was how he argued. ',
+  'The ferryman counted the coins twice. ',
+  'Somewhere a gull laughed at the tide. ',
+  'She had not cried at the funeral; she cried at the bread. ',
+  'The lamp swung once, then held. ',
+  'Every root remembered the sea. ',
+  'The letters were tied with fishing line. ',
+  'Nobody owned the lighthouse, so everyone did. ',
+  'The salt tasted of their grandmother’s hands. ',
+  'Morning came in sideways. ',
 ]
 
-async function signIn(browser: Browser, first: string, viewport = { width: 1440, height: 900 }, scale = 2) {
-  const ctx = await browser.newContext({ viewport, deviceScaleFactor: scale, colorScheme: 'light' })
+async function signIn(
+  browser: Browser,
+  first: string,
+  viewport = { width: 1440, height: 900 },
+  scale = 2,
+  reducedMotion: 'reduce' | 'no-preference' = 'no-preference',
+) {
+  const ctx = await browser.newContext({
+    viewport,
+    deviceScaleFactor: scale,
+    colorScheme: 'light',
+    reducedMotion,
+  })
   const p = await ctx.newPage()
   await p.goto('/sign-in')
   await expect(p.getByLabel('Email')).toBeEnabled()
@@ -53,7 +64,9 @@ const shot = (p: Page, name: string, full = false) => {
 const settle = (p: Page) => p.waitForLoadState('networkidle').catch(() => {})
 
 test('capture', async ({ browser }) => {
-  const { ctx: amaCtx, p: ama } = await signIn(browser, 'Ama')
+  // Reduced motion keeps every remote caret's name label up (it fades after 2.5s otherwise): how the product
+  // renders for people who prefer less motion, and what a still picture needs.
+  const { ctx: amaCtx, p: ama } = await signIn(browser, 'Ama', undefined, 2, 'reduce')
   const works = (await (await ama.request.get('/api/v1/works')).json()) as {
     items: { id: string; title: string; publicPath: string }[]
   }
@@ -110,13 +123,28 @@ test('capture', async ({ browser }) => {
 
   console.warn('  comments left')
   // Everyone who can edit puts their caret in a different paragraph and writes, at the same time.
-  const writers = others.slice(0, 10) // the eleventh (Sofia) is a reader: present, not typing
+  // The two who just commented stay in the chapter (their selection is still on the passage they quoted); eight
+  // others write. Sofia is a reader: present, not typing.
+  const writers = others.slice(2, 10)
   await Promise.all(
     writers.map(async (o, i) => {
       const paras = o.p.getByRole('textbox', { name: /manuscript/ }).locator('p')
       const n = await paras.count()
-      await paras.nth((i * 2 + 1) % n).click()
-      await o.p.keyboard.press('End')
+      // the start of a different paragraph each, so every caret is in view and every sentence reads cleanly; set as a
+      // DOM selection, because a click on a commented passage opens its thread instead of placing the caret
+      // skip the two paragraphs with comment threads on them (a caret inside a comment mark types backwards)
+      const target = [0, 3, 4, 5, 6, 7, 8, 9, 10, 11][i]! % n
+      await paras.nth(target).evaluate((el) => {
+        ;(el.closest('[contenteditable="true"]') as HTMLElement).focus()
+        const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode()!
+        const range = document.createRange()
+        range.setStart(text, 0)
+        range.collapse(true)
+        const sel = window.getSelection()!
+        sel.removeAllRanges()
+        sel.addRange(range)
+      })
+      await o.p.waitForTimeout(150)
     }),
   )
   await ama.getByRole('button', { name: /^Feedback/ }).click()
@@ -157,7 +185,10 @@ test('capture', async ({ browser }) => {
   await settle(ama)
   await shot(ama, 'proposals')
   await ama.getByRole('link', { name: /The Night of the Second Tide/ }).click()
+  await expect(ama).toHaveURL(/\/proposals\/[0-9a-f-]{36}/)
+  await expect(ama.getByRole('complementary', { name: 'Proposal details' })).toBeVisible()
   await settle(ama)
+  await ama.waitForTimeout(600)
   await shot(ama, 'proposal')
   await ama.goto('/app/library')
   await settle(ama)
@@ -165,6 +196,9 @@ test('capture', async ({ browser }) => {
   await ama.goto('/classics')
   await settle(ama)
   await shot(ama, 'classics')
+  await ama.goto('/research')
+  await settle(ama)
+  await shot(ama, 'research')
   await ama.goto(chapterUrl)
   await expect(ama.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({ timeout: 30_000 })
   await ama.getByRole('button', { name: 'Share' }).click()

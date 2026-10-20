@@ -29,6 +29,7 @@ import {
   follows,
   notifications,
   pollVotes,
+  profileViews,
   profiles,
   proposals,
   publications,
@@ -58,14 +59,14 @@ export const DEMO_ACCOUNTS = [
   ['Ama Owusu', 'owner'],
   ['Tolu Ade', 'editor'],
   ['Mei Chen', 'editor'],
-  ['Kofi Mensah', 'collaborator'],
+  ['Kofi Mensah', 'editor'],
   ['Priya Sharma', 'collaborator'],
   ['Mateo García', 'collaborator'],
   ['Leila Haddad', 'collaborator'],
   ['Jonas Berg', 'collaborator'],
-  ['Ngozi Okafor', 'contributor'],
-  ['Haruto Sato', 'contributor'],
-  ['Aroha Ngata', 'contributor'],
+  ['Ngozi Okafor', 'collaborator'],
+  ['Haruto Sato', 'collaborator'],
+  ['Aroha Ngata', 'collaborator'],
   ['Sofia Rossi', 'viewer'],
 ] as const
 const emailOf = (name: string) => `${name.split(' ')[0]!.toLowerCase()}@demo.morrow.test`
@@ -76,6 +77,8 @@ const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 214748364
 const pick = <T>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)]!
 const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1))
 const daysAgo = (d: number, h = int(0, 23)) => new Date(Date.now() - d * 86_400_000 - h * 3_600_000)
+/** a day in the last two months, more often recent: steady growth, not a launch-day spike */
+const recentDay = () => Math.floor(rand() ** 1.5 * 59)
 const face = () => ({
   style: 'face' as const,
   skin: int(0, AVATAR_PARTS.skin - 1),
@@ -233,14 +236,14 @@ async function engage(workId: string, crowd: string[], scale: number) {
   if (likers.length) {
     await db
       .insert(workLikes)
-      .values(likers.map((u) => ({ workId, userId: u, createdAt: daysAgo(int(0, 29)) })))
+      .values(likers.map((u) => ({ workId, userId: u, createdAt: daysAgo(recentDay()) })))
       .onConflictDoNothing()
   }
   const reads = Math.round(int(80, 400) * scale * 6)
   const viewRows = Array.from({ length: reads }, (_, i) => ({
     workId,
     viewer: `a:demo-${workId.slice(0, 8)}-${i}`,
-    day: daysAgo(int(0, 29)).toISOString().slice(0, 10),
+    day: daysAgo(recentDay()).toISOString().slice(0, 10),
   }))
   for (let i = 0; i < viewRows.length; i += 1000)
     await db
@@ -251,13 +254,13 @@ async function engage(workId: string, crowd: string[], scale: number) {
   for (const u of commenters)
     await db
       .insert(readerComments)
-      .values({ workId, authorId: u, body: pick(COMMENTS), createdAt: daysAgo(int(0, 25)) })
+      .values({ workId, authorId: u, body: pick(COMMENTS), createdAt: daysAgo(recentDay()) })
   await db
     .insert(bookmarks)
     .values(
       crowd
         .filter(() => rand() < 0.12 * scale)
-        .map((u) => ({ userId: u, workId, createdAt: daysAgo(int(0, 29)) })),
+        .map((u) => ({ userId: u, workId, createdAt: daysAgo(recentDay()) })),
     )
     .onConflictDoNothing()
   await db.execute(sql`update ${works} w set
@@ -387,7 +390,7 @@ async function main() {
     .onConflictDoNothing()
   await call(ama.cookie, 'PATCH', `/api/v1/works/${flagship.id}`, {
     tags: FLAGSHIP.tags,
-    collaborationMode: 'mixed',
+    collaborationMode: 'direct', // editors and collaborators write directly; proposals stay open to everyone
     releaseDay: 5,
     openRoles: ['illustrator', 'translator'],
     cover: { palette: 0, motif: 0, layout: 'classic' },
@@ -454,22 +457,23 @@ async function main() {
       submittedAt: daysAgo(k),
       createdAt: daysAgo(k + 1),
     })
-  for (const u of crowd.slice(200, 203))
+  for (const [k, u] of crowd.slice(200, 203).entries())
     await db.insert(contributionRequests).values({
       workId: flagship.id,
       requesterId: u,
-      message: pick([
+      message: [
         'I illustrate coastal birds. I’d love to draw the orchard.',
         'I can translate it into Portuguese; my family is from a town like this.',
         'Editor here. Your middle chapters could sing with a little tightening.',
-      ]),
+      ][k]!,
       createdAt: daysAgo(int(0, 3)),
     })
 
   // 4. The rest of the platform: 24 published works by the crowd, some for this week's prompt.
   const prompt = promptFor()
   for (const [i, w] of WORKS.entries()) {
-    const owner = i < 3 ? team[i + 1]!.id : pick(crowd)
+    // Ama has a couple of her own pieces out too; three teammates have one each
+    const owner = i === 9 || i === 20 ? ama.id : i < 3 ? team[i + 1]!.id : pick(crowd)
     const row = await publishedWork(
       owner,
       { ...w, tags: i % 6 === 0 ? [...w.tags, prompt.tag] : w.tags },
@@ -494,7 +498,29 @@ async function main() {
         followerId: u,
         targetType: 'author' as const,
         targetId: ama.id,
-        createdAt: daysAgo(int(0, 60)),
+        createdAt: daysAgo(Math.floor(rand() ** 1.3 * 120)),
+      })),
+    )
+    .onConflictDoNothing()
+  // Ama follows people too, and people visit her page
+  await db
+    .insert(follows)
+    .values(
+      [...team.slice(1).map((t) => t.id), ...crowd.slice(212, 236)].map((u) => ({
+        followerId: ama.id,
+        targetType: 'author' as const,
+        targetId: u,
+        createdAt: daysAgo(int(5, 200)),
+      })),
+    )
+    .onConflictDoNothing()
+  await db
+    .insert(profileViews)
+    .values(
+      Array.from({ length: 900 }, (_, i) => ({
+        userId: ama.id,
+        viewer: `a:demo-profile-${i}`,
+        day: daysAgo(recentDay()).toISOString().slice(0, 10),
       })),
     )
     .onConflictDoNothing()

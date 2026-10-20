@@ -2,6 +2,9 @@ import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { test } from '@playwright/test'
 
+// 1.5× so the mockups stay crisp on high-density screens without bloating the repository
+test.use({ deviceScaleFactor: 1.5 })
+
 /**
  * The README's mockups: real screenshots (docs/images/raw, from capture.spec.ts) set in device frames on Morrow's
  * paper, with the brand's sun and fork, a headline and a few callouts. Rendered at 1600×1000 to docs/images.
@@ -63,8 +66,11 @@ const FORK = (x: number, y: number, w = 520) =>
 const brand = `<div class="brand"><i></i>Morrow</div>`
 const laptop = (src: string, x: number, y: number, w: number) =>
   `<div class="laptop" style="left:${x}px;top:${y}px;width:${w}px"><div class="lid"><img src="${img(src)}"></div><div class="base"></div></div>`
-const browser = (src: string, x: number, y: number, w: number, url: string, crop = 0) =>
-  `<div class="browser" style="left:${x}px;top:${y}px;width:${w}px${crop ? `;height:${crop}px` : ''}"><div class="bar"><i></i><i></i><i></i><span>${url}</span></div><img src="${img(src)}"></div>`
+/** A browser window; `crop` trims the screenshot's bottom (never taller than the 16:10 screenshot itself). */
+const browser = (src: string, x: number, y: number, w: number, url: string, crop = 0) => {
+  const h = Math.min(crop || Infinity, Math.round(w / 1.6) + 38)
+  return `<div class="browser" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="bar"><i></i><i></i><i></i><span>${url}</span></div><img src="${img(src)}"></div>`
+}
 const phone = (src: string, x: number, y: number, w = 300, rot = 0) =>
   `<div class="phone" style="left:${x}px;top:${y}px;width:${w}px;transform:rotate(${rot}deg)"><img src="${img(src)}"></div>`
 const chip = (x: number, y: number, icon: string, text: string) =>
@@ -113,12 +119,12 @@ const SCENES: Record<string, string> = {
     ${call(1160, 630, 'Roles that mean something', 'Owner, editors, collaborators, contributors and readers, enforced by one policy on the server and in collab.')}
     ${call(1160, 820, 'Nothing is ever lost', 'Every change saved as you type; named versions, history and restore.')}`,
   review: `${RINGS(1500, 120)}
-    <div style="position:absolute;left:70px;top:70px"><p class="kicker">Proposals and review</p>
+    <div style="position:absolute;left:70px;top:70px;width:520px"><p class="kicker">Proposals and review</p>
       <h1 style="margin-top:16px;font-size:60px">Nothing changes<br><em>until you say so.</em></h1>
-      <p class="lede" style="margin-top:20px">Contributors write in a private copy. You compare, discuss and accept, with every author credited.</p></div>
-    ${browser('proposals', 70, 430, 640, 'morrow.app/app/works/the-salt-orchard/proposals', 520)}
-    ${browser('proposal', 760, 120, 780, 'morrow.app/app/works/the-salt-orchard/proposals/…', 780)}
-    ${FORK(70, 900, 640)}`,
+      <p class="lede" style="margin-top:20px">Contributors write in a private copy, or offer the next chapter. You compare, discuss and accept, with every author credited.</p></div>
+    ${browser('proposals', 70, 520, 560, 'morrow.app/app/works/the-salt-orchard/proposals', 380)}
+    ${browser('proposal', 680, 110, 860, 'morrow.app/app/works/the-salt-orchard/proposals/…', 800)}
+    ${FORK(70, 920, 560)}`,
   reading: `${SUN(1500, 90, 260, '#BFD9D6', 0.55)}
     <div style="position:absolute;left:70px;top:90px;width:470px"><p class="kicker">Reading that talks back</p>
       <h1 style="margin-top:16px;font-size:62px">Readers comment<br>on a single line,<br><em>and vote on what if.</em></h1>
