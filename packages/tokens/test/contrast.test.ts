@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, dark, light, presence, primitives as p } from '../src/index.ts'
+import { contrast, dark, light, presence, primitives as p, sepia } from '../src/index.ts'
 
 const TEXT = 4.5,
   UI = 3
@@ -16,6 +16,7 @@ const strongText = [
 describe.each([
   ['light', light],
   ['dark', dark],
+  ['sepia', sepia],
 ] as const)('%s theme', (name, t) => {
   for (const fg of strongText)
     for (const bg of [...textOn, 'bg-raised'] as const)
@@ -29,7 +30,7 @@ describe.each([
     expect(contrast(t['action-primary-fg'], t['action-primary-hover'])).toBeGreaterThanOrEqual(TEXT)
   })
   const controlSurfaces =
-    name === 'light'
+    name === 'light' || name === 'sepia'
       ? (['bg-canvas', 'bg-app'] as const)
       : (['bg-app', 'bg-canvas', 'bg-sidebar', 'bg-raised', 'bg-hover'] as const)
   for (const bg of controlSurfaces) {
@@ -41,6 +42,11 @@ describe.each([
   for (const bg of ['tint-insert', 'tint-delete', 'tint-warning'] as const)
     it(`text-primary on ${bg} ≥ ${TEXT}`, () =>
       expect(contrast(t['text-primary'], t[bg])).toBeGreaterThanOrEqual(TEXT))
+})
+
+describe('sepia reading page', () => {
+  it('body text ≥ 7 on the sepia canvas', () =>
+    expect(contrast(sepia['text-primary'], sepia['bg-canvas'])).toBeGreaterThanOrEqual(7))
 })
 
 describe('presence colours', () => {

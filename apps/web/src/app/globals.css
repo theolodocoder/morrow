@@ -4,8 +4,10 @@
 /*
  * Tailwind reads only our semantic tokens: the default palette is removed so components cannot reach for
  * raw colours (design system §16). Utilities: bg-canvas, text-primary, border-control, ring-focus …
+ * `inline` keeps utilities pointing at the underlying --bg and --text vars, so a subtree that re-declares them
+ * (the reader's page tones) recolours its descendants; a plain @theme would resolve them once at :root.
  */
-@theme {
+@theme inline {
   --color-*: initial;
   --color-app: var(--bg-app);
   --color-canvas: var(--bg-canvas);
@@ -985,48 +987,6 @@
 .reader[data-face='sans'] .reading-body {
   font-family: var(--font-ui-family);
 }
-.reader[data-tone='sepia'],
-.reader[data-tone='sepia'] * {
-  --bg-canvas: #f4ecd8;
-  --bg-app: #ece2c9;
-  --bg-hover: #e6d9bb;
-  --text-primary: #3b2f22;
-  --text-secondary: #5a4a38;
-  --border-subtle: #ddcfae;
-  /* Tailwind's colour variables resolve at the root: point them at this page's tones too */
-  --color-canvas: #f4ecd8;
-  --color-app: #ece2c9;
-  --color-hover: #e6d9bb;
-  --color-primary: #3b2f22;
-  --color-secondary: #5a4a38;
-  --color-subtle: #ddcfae;
-}
-.reader[data-tone='night'],
-.reader[data-tone='night'] * {
-  --bg-canvas: #1b1a18;
-  --bg-app: #23221f;
-  --bg-hover: #2c2b27;
-  --bg-raised: #2a2925;
-  --bg-selected: #3a3226;
-  --text-primary: #e9e3d6;
-  --text-secondary: #bdb5a6;
-  --text-tertiary: #9a9283;
-  --text-accent: #e9a183;
-  --border-subtle: #34322d;
-  --border-control: #5a564d;
-  --color-canvas: #1b1a18;
-  --color-app: #23221f;
-  --color-hover: #2c2b27;
-  --color-raised: #2a2925;
-  --color-selected: #3a3226;
-  --color-primary: #e9e3d6;
-  --color-secondary: #bdb5a6;
-  --color-tertiary: #9a9283;
-  --color-accent: #e9a183;
-  --color-subtle: #34322d;
-  --color-control: #5a564d;
-}
-
 /* Editor panels slide in: up from the bottom on phones, in from the right beside the manuscript. */
 .panel {
   animation: sheet-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);

@@ -1,6 +1,6 @@
 // Emits tokens.css: semantic tokens as CSS variables, light by default, dark by system preference or data-theme.
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dark, fonts, light, motion, radius } from '../src/index.ts'
+import { dark, fonts, light, motion, radius, sepia } from '../src/index.ts'
 
 const vars = (t: Record<string, string>) =>
   Object.entries(t)
@@ -21,6 +21,19 @@ ${vars(dark).replace(/^/gm, '  ')}
   }
 }
 :root[data-theme='dark'] {
+${vars(dark)}
+  color-scheme: dark;
+}
+/* The reader's page tone is the reader's choice: paper stays light even when the OS is dark. */
+.reader[data-tone='paper'] {
+${vars(light)}
+  color-scheme: light;
+}
+.reader[data-tone='sepia'] {
+${vars(sepia)}
+  color-scheme: light;
+}
+.reader[data-tone='night'] {
 ${vars(dark)}
   color-scheme: dark;
 }

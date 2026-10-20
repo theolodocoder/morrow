@@ -41,6 +41,14 @@ export const primitives = {
   nightTintInsert: '#2B3427',
   nightTintDelete: '#3B2726',
   nightTintWarning: '#353022',
+  sepia50: '#F4ECD8',
+  sepia100: '#EADFC6',
+  sepiaInk: '#3B2F22',
+  sepiaInk2: '#5A4A38',
+  sepiaInk3: '#6B5A45',
+  sepiaBorder: '#DDCFAE',
+  sepiaStone: '#857860',
+  sepiaTintSelected: '#EFDDC9',
 } as const
 
 const p = primitives
@@ -121,6 +129,22 @@ export const dark: Theme = {
   'tint-insert': p.nightTintInsert,
   'tint-delete': p.nightTintDelete,
   'tint-warning': p.nightTintWarning,
+}
+
+/** The reader's sepia page: warm paper, brown ink. Accent, status and button roles reuse the light hues (measured on sepia). */
+export const sepia: Theme = {
+  ...light,
+  'bg-app': p.sepia100,
+  'bg-canvas': p.sepia50,
+  'bg-sidebar': p.sepia100,
+  'bg-raised': p.sepia50,
+  'bg-hover': p.sepia100,
+  'bg-selected': p.sepiaTintSelected,
+  'text-primary': p.sepiaInk,
+  'text-secondary': p.sepiaInk2,
+  'text-tertiary': p.sepiaInk3,
+  'border-subtle': p.sepiaBorder,
+  'border-control': p.sepiaStone,
 }
 
 /** Eight collaborator hues: caret ≥ 3:1 on the canvas, label text ≥ 4.5:1 (design-system §3). */
