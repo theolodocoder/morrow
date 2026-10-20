@@ -9,6 +9,7 @@ import * as Y from 'yjs'
 import { documentMode } from '@morrow/domain'
 import { verifyInternal, verifyTicket, INTERNAL_SIGNATURE_HEADER } from '@morrow/domain/signing'
 import {
+  blocks,
   documentSnapshots,
   editSessions,
   loadDocumentAccess,
@@ -17,13 +18,14 @@ import {
   works,
   type Database,
 } from '@morrow/db'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, or } from 'drizzle-orm'
 import type { PMNode } from '@morrow/editor'
 import { CONTENT_FIELD, SCHEMA_VERSION } from '@morrow/editor'
 import { documentToJSON, initialDocumentState, replaceDocumentContent } from '@morrow/editor/server'
 import type { CollabEvent } from '@morrow/contracts'
 import type { CollabEnv } from './env.ts'
 import { createDocumentStore } from './document-store.ts'
+import { createVoiceRooms, parseVoiceMessage } from './voice.ts'
 import {
   applyProposal,
   applyUsingProposal,
@@ -81,6 +83,29 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
   const send = (doc: { broadcastStateless(p: string): void }, event: CollabEvent) =>
     doc.broadcastStateless(JSON.stringify(event))
 
+  // Voice rooms (voice.ts): blocking is checked in both directions, cached briefly per pair.
+  const blockCache = new Map<string, { at: number; blocked: boolean }>()
+  const voice = createVoiceRooms({
+    async blocked(a, b) {
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`
+      const hit = blockCache.get(key)
+      if (hit && Date.now() - hit.at < 60_000) return hit.blocked
+      const rows = await db
+        .select({ x: blocks.blockerId })
+        .from(blocks)
+        .where(
+          or(
+            and(eq(blocks.blockerId, a), eq(blocks.blockedId, b)),
+            and(eq(blocks.blockerId, b), eq(blocks.blockedId, a)),
+          ),
+        )
+        .limit(1)
+      if (blockCache.size > 10_000) blockCache.clear()
+      blockCache.set(key, { at: Date.now(), blocked: rows.length > 0 })
+      return rows.length > 0
+    },
+  })
+
   const server = new Server<ConnectionContext>({
     name: 'morrow-collab',
     port: env.COLLAB_PORT, // listen(0) is ignored by Hocuspocus v4; the port must be in config (spike S3)
@@ -130,6 +155,19 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
       const readOnly = !(mayEdit && mode === 'edit')
       connectionConfig.readOnly = readOnly // enforced by the server: updates from read-only connections are dropped
       return { userId, workId: row.work.id, readOnly }
+    },
+
+    async connected({ connection, documentName, context, socketId }) {
+      // Everyone on the chapter can see who's in its voice room (and join it).
+      if (context?.userId)
+        await voice.watch(documentName, socketId, context.userId, (m) => connection.sendStateless(m))
+    },
+
+    async onStateless({ connection, documentName, payload }) {
+      const msg = parseVoiceMessage(payload)
+      const userId = (connection.context as ConnectionContext | undefined)?.userId
+      if (!msg || !userId) return
+      await voice.handle(documentName, connection.socketId, userId, (m) => connection.sendStateless(m), msg)
     },
 
     async beforeHandleMessage({ connection, context, documentName }) {
@@ -224,6 +262,7 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
     },
 
     async onDisconnect({ documentName, document, clientsCount, context, socketId }) {
+      await voice.drop(documentName, socketId, true)
       const key = `${socketId}:${documentName}`
       const session = sessions.get(key)
       if (session) {

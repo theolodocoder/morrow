@@ -36,6 +36,7 @@ import { ManuscriptCanvas } from './manuscript-canvas'
 import { VersionHistory } from './version-history'
 import { useCollab } from './use-collab'
 import { PresenceStack } from './presence-stack'
+import { VoiceControl } from './voice-control'
 import { ShareDialog } from './share-dialog'
 import { FeedbackPanel } from './feedback-panel'
 import { EditorPanel } from './editor-panel'
@@ -169,6 +170,7 @@ export function EditorShell({
           />
         </div>
         {collab?.synced && <PresenceStack provider={collab.provider} me={me} />}
+        {collab?.synced && <VoiceControl collab={collab} me={me} />}
         {collab && <ConnectionStatus status={collab.status} />}
         {!collab?.readOnly && <GoalRing />}
         {/* Panels and sharing: icons (named for screen readers, titled on hover), as in every collaborative editor. */}

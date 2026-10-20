@@ -803,6 +803,24 @@
   transform-origin: left;
   animation: progress-line 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* Voice (P-064): a soft ring pulses around whoever is speaking. */
+.voice-avatar {
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 150ms ease-out;
+}
+.voice-speaking {
+  box-shadow:
+    0 0 0 2px var(--bg-raised),
+    0 0 0 4px var(--text-success);
+  animation: voice-pulse 900ms ease-in-out infinite;
+}
+@keyframes voice-pulse {
+  50% {
+    box-shadow:
+      0 0 0 2px var(--bg-raised),
+      0 0 0 6px color-mix(in srgb, var(--text-success) 55%, transparent);
+  }
+}
 /* A check that draws itself in. */
 .check-draw {
   stroke-dasharray: 14;
@@ -864,6 +882,7 @@
   .para-note,
   .milestone-sun,
   .poll-fill,
+  .voice-speaking,
   .kind-tile svg {
     animation: none !important;
   }
