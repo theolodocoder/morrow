@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import {
@@ -6,6 +7,7 @@ import {
   editSessions,
   profiles,
   proposals,
+  publications,
   workMembers,
 } from '@morrow/db'
 import { setup, signUp } from './setup.ts'
@@ -206,6 +208,51 @@ describe('publishing and public reading (PRD FR-023)', () => {
     const again = (await anon(`/works/${s.w.publicPath}`)).json() as { credits: unknown[] }
     expect(again.credits).toMatchObject(expected)
     expect(again.credits).toHaveLength(2)
+  })
+
+  it('the co-writer threshold is 20 edits: 19 is not enough', async () => {
+    const s = await creditScene()
+    await sessions(s, s.kemi.id, s.ch1, [10, 10])
+    await sessions(s, s.tolu.id, s.ch1, [10, 9])
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as {
+      credits: { role: string; person: { displayName: string } }[]
+    }
+    expect(page.credits.map((c) => [c.role, c.person.displayName])).toEqual([
+      ['author', 'Ama'],
+      ['cowriter', 'Kemi'],
+    ])
+  })
+
+  it('publications made before credits were stored are backfilled by migration 0025', async () => {
+    const s = await creditScene()
+    await sessions(s, s.kemi.id, s.ch2, [25])
+    await ctx.db.db.insert(proposals).values({
+      workId: s.w.id,
+      kind: 'edit',
+      status: 'accepted',
+      authorId: s.tolu.id,
+      title: 'A kinder line',
+      chapterId: s.ch1.id,
+      decidedAt: new Date(),
+    })
+    await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, { visibility: 'public' })
+    // stand-in for a row published before the column existed, plus edits made after it was published
+    await ctx.db.db.update(publications).set({ credits: [] }).where(eq(publications.workId, s.w.id))
+    await sessions(s, s.tolu.id, s.ch2, [40])
+    const backfill = readFileSync(
+      new URL('../../../packages/db/migrations/0025_backfill_publication_credits.sql', import.meta.url),
+      'utf8',
+    )
+    await ctx.db.pool.query(backfill)
+    await ctx.db.pool.query(backfill) // idempotent
+    const page = (await anon(`/works/${s.w.publicPath}`)).json() as { credits: unknown[] }
+    expect(page.credits).toMatchObject([
+      { role: 'author', person: { displayName: 'Ama' } },
+      { role: 'cowriter', person: { displayName: 'Kemi' }, chapters: [2] },
+      { role: 'contributor', person: { displayName: 'Tolu' }, chapters: [1] },
+    ])
+    expect(page.credits).toHaveLength(3)
   })
 
   it('credits accepted-proposal authors as contributors', async () => {
