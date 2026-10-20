@@ -41,6 +41,7 @@ import { peopleByIds, toPerson } from '../people.ts'
 import { HttpProblem, forbidden, notFound } from '../problems.ts'
 import { blockedBetween, blockedSet, spamCheck } from '../safety.ts'
 import { livePublications, readableWork } from './publishing.ts'
+import { readableAlternates } from './alternates.ts'
 
 const PathParams = z.object({ publicPath: z.string().max(200) })
 const findable = sql`w.visibility = 'public' and w.published_at is not null and w.deleted_at is null and w.hidden_at is null`
@@ -465,10 +466,15 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
   )
 }
 
-/** The published chapter a slug names (slugs end with the chapter id's last six characters). */
+/**
+ * The published chapter a slug names (slugs end with the chapter id's last six characters): main's first, then
+ * the chapters of an alternate version readers can reach.
+ */
 async function publishedChapterId(db: Database, workId: string, slug: string) {
   const suffix = slug.slice(-6)
-  return (await livePublications(db, workId)).find((p) => p.chapterId.endsWith(suffix))?.chapterId ?? null
+  const main = await livePublications(db, workId)
+  const named = (rows: { chapterId: string }[]) => rows.find((r) => r.chapterId.endsWith(suffix))?.chapterId
+  return named(main) ?? (await readableAlternates(db, main)).map((a) => named(a.rows)).find(Boolean) ?? null
 }
 
 /**

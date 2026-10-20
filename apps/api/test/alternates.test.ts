@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { and, eq, isNull } from 'drizzle-orm'
-import { alternatePublications, chapters, publications, workMembers } from '@morrow/db'
+import { alternatePublications, chapters, documentProjections, publications, workMembers } from '@morrow/db'
 import { liveAlternates } from '../src/routes/alternates.ts'
 import { setup, signUp } from './setup.ts'
 
@@ -210,5 +210,191 @@ describe('publishing alternate versions', () => {
     expect(off.json()).toEqual({ branchId: a.id, name: 'A', published: false, chapterCount: 0 })
     expect(await liveRows(a.id)).toEqual([])
     expect((await liveRows(b.id)).map((r) => r.id).sort()).toEqual(bBefore)
+  })
+})
+
+/** Stand-in for collab writing a projection after an edit. */
+async function write(documentId: string, workId: string, text: string) {
+  const v = {
+    documentId,
+    workId,
+    contentJson: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] },
+    plainText: text,
+    wordCount: text.split(/\s+/).length,
+    sourceRevision: Date.now(),
+  }
+  await ctx.db.db
+    .insert(documentProjections)
+    .values(v)
+    .onConflictDoUpdate({ target: documentProjections.documentId, set: v })
+}
+const anon = (path: string) => ctx.app.inject({ method: 'GET', url: `/api/v1/public${path}` })
+type Summary = { title: string; slug: string; wordCount: number }
+type Page = {
+  chapters: Summary[]
+  versions: {
+    name: string
+    slug: string
+    premise: string
+    author: { displayName: string }
+    afterChapter: number
+    chapters: Summary[]
+    wordCount: number
+  }[]
+}
+type Chapter = {
+  title: string
+  index: number
+  credit: { displayName: string }[]
+  version: { name: string; slug: string } | null
+  prev: Summary | null
+  next: (Summary & { opening: string | null }) | null
+  alternates: {
+    name: string
+    slug: string
+    premise: string
+    author: { displayName: string }
+    firstChapter: Summary & { opening: string | null }
+    chapterCount: number
+  }[]
+}
+
+/**
+ * A published four-chapter novel and a contributor's version that differs from chapter 4 on, with an epilogue of
+ * its own, published beside it by the owner.
+ */
+async function readerScene() {
+  const owner = await signUp(ctx.app, 'Ama Owner')
+  const w = await published(owner)
+  const ch4 = (
+    await owner.call('POST', `/api/v1/works/${w.id}/chapters`, { title: 'Chapter 4' })
+  ).json() as Ch
+  const pub = (await owner.call('POST', `/api/v1/works/${w.id}/publish`, {})).json() as { publicPath: string }
+  const writer = await member(owner, w.id, 'contributor')
+  const b = await branch(writer, w, w.defaultBranchId, ch4.id)
+  const own = (await owner.call('GET', `/api/v1/branches/${b.id}/chapters`)).json().items as Ch[]
+  await write(own[3]!.documentId, w.id, 'She stayed for the harvest.')
+  const epilogue = (
+    await owner.call('POST', `/api/v1/branches/${b.id}/chapters`, { title: 'Epilogue' })
+  ).json() as Ch
+  await write(epilogue.documentId, w.id, 'Years later, the orchard was hers.')
+  expect((await publishAlt(owner, w.id, b.id)).statusCode).toBe(200)
+  const path = pub.publicPath
+  const page = async () => (await anon(`/works/${path}`)).json() as Page
+  const chapter = async (slug: string) => (await anon(`/works/${path}/chapters/${slug}`)).json() as Chapter
+  return { owner, writer, w, b, path, page, chapter }
+}
+
+describe('reading alternate versions', () => {
+  it('the work page lists the version; main chapter 3 offers the path, the version reads on from there', async () => {
+    const s = await readerScene()
+    const page = await s.page()
+    expect(page.chapters).toHaveLength(4)
+    expect(page.versions).toEqual([
+      {
+        name: 'If She Stayed',
+        slug: 'if-she-stayed',
+        premise: 'What if Ama stays?',
+        author: expect.objectContaining({ displayName: 'contributor' }),
+        afterChapter: 3,
+        chapters: [
+          expect.objectContaining({ title: 'Chapter 4', wordCount: 5 }),
+          expect.objectContaining({ title: 'Epilogue', wordCount: 6 }),
+        ],
+        wordCount: 11,
+      },
+    ])
+    const [v] = page.versions
+
+    const third = await s.chapter(page.chapters[2]!.slug)
+    expect(third.version).toBeNull()
+    // the main story still carries on as the obvious path
+    expect(third.next?.slug).toBe(page.chapters[3]!.slug)
+    expect(third.alternates).toEqual([
+      {
+        name: 'If She Stayed',
+        slug: 'if-she-stayed',
+        premise: 'What if Ama stays?',
+        author: expect.objectContaining({ displayName: 'contributor' }),
+        firstChapter: { ...v!.chapters[0]!, opening: 'She stayed for the harvest.' },
+        chapterCount: 2,
+      },
+    ])
+    expect((await s.chapter(page.chapters[1]!.slug)).alternates).toEqual([])
+    expect((await s.chapter(page.chapters[3]!.slug)).alternates).toEqual([])
+
+    const first = await s.chapter(v!.chapters[0]!.slug)
+    expect(first).toMatchObject({
+      title: 'Chapter 4',
+      index: 3,
+      version: { name: 'If She Stayed', slug: 'if-she-stayed' },
+      prev: page.chapters[2],
+      next: { ...v!.chapters[1]!, opening: 'Years later, the orchard was hers.' },
+      alternates: [],
+    })
+    expect(first.credit[0]!.displayName).toBe('Ama Owner')
+    const last = await s.chapter(v!.chapters[1]!.slug)
+    expect(last).toMatchObject({ index: 4, prev: v!.chapters[0], next: null })
+  })
+
+  it('a reader can comment on a paragraph of the version', async () => {
+    const s = await readerScene()
+    const slug = (await s.page()).versions[0]!.chapters[0]!.slug
+    const reader = await signUp(ctx.app, 'Bo Reader')
+    const posted = await reader.call('POST', `/api/v1/reading/${s.path}/comments`, {
+      body: 'She should have left.',
+      chapterSlug: slug,
+      blockId: 'b1',
+    })
+    expect(posted.statusCode).toBe(201)
+    const counts = (await anon(`/reading/${s.path}/chapters/${slug}/paragraph-comments`)).json()
+    expect(counts).toEqual({ counts: { b1: 1 } })
+  })
+
+  it('unpublishing the version takes it off the page and its chapters 404', async () => {
+    const s = await readerScene()
+    const before = await s.page()
+    const slug = before.versions[0]!.chapters[0]!.slug
+    expect((await unpublishAlt(s.owner, s.w.id, s.b.id)).statusCode).toBe(200)
+    expect((await s.page()).versions).toEqual([])
+    expect((await s.chapter(before.chapters[2]!.slug)).alternates).toEqual([])
+    expect((await anon(`/works/${s.path}/chapters/${slug}`)).statusCode).toBe(404)
+  })
+
+  it('a version readers can no longer reach from main is silently left out', async () => {
+    // main republished from a different selected branch: the version no longer branches from what readers get
+    const s = await readerScene()
+    const slug = (await s.page()).versions[0]!.chapters[0]!.slug
+    const other = await branch(s.owner, s.w, s.w.defaultBranchId, undefined, 'Other ending')
+    expect(
+      (await s.owner.call('PATCH', `/api/v1/branches/${other.id}`, { status: 'selected' })).statusCode,
+    ).toBe(200)
+    expect((await s.owner.call('POST', `/api/v1/works/${s.w.id}/publish`, {})).statusCode).toBe(200)
+    expect((await s.page()).versions).toEqual([])
+    expect((await anon(`/works/${s.path}/chapters/${slug}`)).statusCode).toBe(404)
+    expect((await liveRows(s.b.id)).length).toBe(2)
+
+    // the main chapter it follows is taken out of main
+    const t = await readerScene()
+    const page = await t.page()
+    const altSlug = page.versions[0]!.chapters[0]!.slug
+    expect((await t.owner.call('DELETE', `/api/v1/chapters/${t.w.main[2]!.id}`)).statusCode).toBe(204)
+    expect((await t.owner.call('POST', `/api/v1/works/${t.w.id}/publish`, {})).statusCode).toBe(200)
+    const after = await t.page()
+    expect(after.chapters).toHaveLength(3)
+    expect(after.versions).toEqual([])
+    expect(
+      (await Promise.all(after.chapters.map((c) => t.chapter(c.slug)))).every(
+        (c) => c.alternates.length === 0,
+      ),
+    ).toBe(true)
+    expect((await anon(`/works/${t.path}/chapters/${altSlug}`)).statusCode).toBe(404)
+    const reader = await signUp(ctx.app)
+    const comment = await reader.call('POST', `/api/v1/reading/${t.path}/comments`, {
+      body: 'Hello?',
+      chapterSlug: altSlug,
+      blockId: 'b1',
+    })
+    expect(comment.statusCode).toBe(404)
   })
 })

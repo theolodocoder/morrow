@@ -686,6 +686,22 @@ export const PublicWork = z.object({
   contributors: z.array(PublicPerson),
   chapters: z.array(PublicChapterSummary),
   wordCount: z.number().int(),
+  /**
+   * Alternate versions published beside the main story (spec calls 1–3). Each shares main's chapters up to
+   * `afterChapter` (1-based); `chapters` and `wordCount` are only the version's own, from where it differs.
+   */
+  versions: z.array(
+    z.object({
+      name: z.string(),
+      slug: z.string(),
+      /** the branch's description */
+      premise: z.string(),
+      author: PublicPerson,
+      afterChapter: z.number().int(),
+      chapters: z.array(PublicChapterSummary),
+      wordCount: z.number().int(),
+    }),
+  ),
   completed: z.boolean(),
   likes: z.number().int(),
   views: z.number().int(),
@@ -704,6 +720,19 @@ export const PublicChapter = z.object({
   prev: PublicChapterSummary.nullable(),
   /** `opening` is the next chapter's first line, for the "Up next" card; null when it has no text */
   next: PublicChapterSummary.extend({ opening: z.string().nullable() }).nullable(),
+  /** the alternate version this chapter belongs to; null on the main story */
+  version: z.object({ name: z.string(), slug: z.string() }).nullable(),
+  /** pick-a-path: the versions that branch off at the end of this chapter (only ever on a main chapter) */
+  alternates: z.array(
+    z.object({
+      name: z.string(),
+      slug: z.string(),
+      premise: z.string(),
+      author: PublicPerson,
+      firstChapter: PublicChapterSummary.extend({ opening: z.string().nullable() }),
+      chapterCount: z.number().int(),
+    }),
+  ),
 })
 export type PublicChapter = z.infer<typeof PublicChapter>
 

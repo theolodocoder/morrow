@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { AlternateStatus, PROBLEM, PublishAlternateInput } from '@morrow/contracts'
 import { alternatePublications, branches, chapters, type Database } from '@morrow/db'
@@ -26,6 +26,27 @@ export async function liveAlternates(db: Database, workId: string) {
   const byBranch = new Map<string, typeof rows>()
   for (const r of rows) byBranch.set(r.branchId, [...(byBranch.get(r.branchId) ?? []), r])
   return byBranch
+}
+
+/**
+ * The alternates readers may see beside these live main rows, each with its branch and the index of the main
+ * chapter it follows. One whose parent isn't main's published branch any more (another version was selected), or
+ * whose shared chapter left main, can't be reached from the story readers get, so it is left out until republished.
+ */
+export async function readableAlternates(db: Database, main: Awaited<ReturnType<typeof livePublications>>) {
+  if (!main.length) return []
+  const live = await liveAlternates(db, main[0]!.workId)
+  if (!live.size) return []
+  const list = await db
+    .select()
+    .from(branches)
+    .where(inArray(branches.id, [...live.keys()]))
+    .orderBy(asc(branches.createdAt))
+  return list.flatMap((branch) => {
+    const rows = live.get(branch.id)!
+    const after = main.findIndex((p) => p.position === rows[0]!.afterPosition)
+    return branch.parentBranchId === main[0]!.branchId && after !== -1 ? [{ branch, rows, after }] : []
+  })
 }
 
 /** A branch of this work that still exists and finished forking; anything else is not found. */

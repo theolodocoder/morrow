@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import {
   coverOf,
   PROBLEM,
@@ -27,6 +27,7 @@ import { recordActivity } from '../activity.ts'
 import { chapterCredits } from '../credits.ts'
 import { peopleByIds } from '../people.ts'
 import { HttpProblem, notFound } from '../problems.ts'
+import { readableAlternates } from './alternates.ts'
 import { slugify } from '../slug.ts'
 
 const WorkParams = z.object({ workId: z.uuid() })
@@ -306,6 +307,17 @@ function workCredits(
   return [{ person: personOr(people, ownerId), role: 'author', chapters: [] }, ...others]
 }
 
+/** What a reader's path through a work is made of: a published main or alternate chapter. */
+type Chapterish = Pick<
+  typeof publications.$inferSelect,
+  'title' | 'chapterId' | 'snapshotId' | 'wordCount' | 'credits'
+>
+const summaryOf = (x: Chapterish) => ({
+  title: x.title,
+  slug: chapterSlug(x.title, x.chapterId),
+  wordCount: x.wordCount,
+})
+
 export async function livePublications(db: Database, workId: string) {
   return db
     .select()
@@ -326,9 +338,11 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
       const [branch] = pubs.length
         ? await db.select().from(branches).where(eq(branches.id, pubs[0]!.branchId))
         : []
+      const alts = await readableAlternates(db, pubs)
       const people = await peopleByIds(db, [
         w.ownerId,
         ...pubs.flatMap((p) => p.credits.map((c) => c.userId)),
+        ...alts.map((a) => a.branch.createdBy),
       ])
       const credits = workCredits(w.ownerId, pubs, people)
       return {
@@ -357,12 +371,19 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
         likes: w.likeCount,
         views: w.viewCount,
         comments: w.readerCommentCount,
-        chapters: pubs.map((p) => ({
-          title: p.title,
-          slug: chapterSlug(p.title, p.chapterId),
-          wordCount: p.wordCount,
-        })),
+        chapters: pubs.map(summaryOf),
         wordCount: pubs.reduce((n, p) => n + p.wordCount, 0),
+        versions: alts
+          .toSorted((a, b) => a.after - b.after)
+          .map((a) => ({
+            name: a.branch.name,
+            slug: a.branch.slug,
+            premise: a.branch.description,
+            author: personOr(people, a.branch.createdBy),
+            afterChapter: a.after + 1,
+            chapters: a.rows.map(summaryOf),
+            wordCount: a.rows.reduce((n, r) => n + r.wordCount, 0),
+          })),
       }
     },
   )
@@ -379,30 +400,49 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
       const w = await readableWork(db, req.params.publicPath)
       if (!w) throw notFound()
       const pubs = await livePublications(db, w.id)
+      const alts = await readableAlternates(db, pubs)
       const suffix = req.params.chapterSlug.slice(-6)
-      const index = pubs.findIndex((p) => p.chapterId.endsWith(suffix))
+      const at = (rows: { chapterId: string }[]) => rows.findIndex((r) => r.chapterId.endsWith(suffix))
+      // The reader's path to this chapter: main's chapters, or main's up to where a version splits off, then its own.
+      let path: Chapterish[] = pubs
+      let index = at(pubs)
+      let version: (typeof alts)[number]['branch'] | null = null
+      for (const a of index === -1 ? alts : []) {
+        const j = at(a.rows)
+        if (j === -1) continue
+        path = [...pubs.slice(0, a.after + 1), ...a.rows]
+        index = a.after + 1 + j
+        version = a.branch
+        break
+      }
       if (index === -1) throw notFound()
-      const p = pubs[index]!
-      const [snap] = await db
-        .select({ content: documentSnapshots.contentJson })
+      const p = path[index]!
+      const following = path[index + 1]
+      // no alternates of alternates: only main chapters offer a choice
+      const offered = version ? [] : alts.filter((a) => a.after === index)
+      const snaps = await db
+        .select({ id: documentSnapshots.id, content: documentSnapshots.contentJson })
         .from(documentSnapshots)
-        .where(eq(documentSnapshots.id, p.snapshotId))
-      const following = pubs[index + 1]
-      const [nextSnap] = following
-        ? await db
-            .select({ content: documentSnapshots.contentJson })
-            .from(documentSnapshots)
-            .where(eq(documentSnapshots.id, following.snapshotId))
-        : []
+        .where(
+          inArray(documentSnapshots.id, [
+            p.snapshotId,
+            ...(following ? [following.snapshotId] : []),
+            ...offered.map((a) => a.rows[0]!.snapshotId),
+          ]),
+        )
+      const content = new Map(snaps.map((x) => [x.id, x.content]))
       const cowriters = p.credits.filter((c) => c.role === 'cowriter').map((c) => c.userId)
-      const people = await peopleByIds(db, [w.ownerId, ...cowriters])
-      const summary = (x: (typeof pubs)[number] | undefined) =>
-        x ? { title: x.title, slug: chapterSlug(x.title, x.chapterId), wordCount: x.wordCount } : null
+      const people = await peopleByIds(db, [
+        w.ownerId,
+        ...cowriters,
+        ...offered.map((a) => a.branch.createdBy),
+      ])
+      const teaser = (x: Chapterish) => ({ ...summaryOf(x), opening: openingLine(content.get(x.snapshotId)) })
       return {
         title: p.title,
         slug: chapterSlug(p.title, p.chapterId),
         index,
-        content: snap?.content ?? { type: 'doc' },
+        content: content.get(p.snapshotId) ?? { type: 'doc' },
         wordCount: p.wordCount,
         credit: [
           personOr(people, w.ownerId),
@@ -410,8 +450,17 @@ export const publicReadingRoutes: FastifyPluginAsyncZod<{ db: Database }> = asyn
             .flatMap((id) => people.get(id) ?? [])
             .sort((a, b) => a.displayName.localeCompare(b.displayName)),
         ],
-        prev: summary(pubs[index - 1]),
-        next: following ? { ...summary(following)!, opening: openingLine(nextSnap?.content) } : null,
+        prev: index > 0 ? summaryOf(path[index - 1]!) : null,
+        next: following ? teaser(following) : null,
+        version: version && { name: version.name, slug: version.slug },
+        alternates: offered.map((a) => ({
+          name: a.branch.name,
+          slug: a.branch.slug,
+          premise: a.branch.description,
+          author: personOr(people, a.branch.createdBy),
+          firstChapter: teaser(a.rows[0]!),
+          chapterCount: a.rows.length,
+        })),
       }
     },
   )
