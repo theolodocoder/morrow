@@ -43,6 +43,7 @@ import { pollRoutes, publicPollRoutes } from './routes/polls.ts'
 import { classicRoutes } from './routes/classics.ts'
 import { badgeRoutes } from './routes/badges.ts'
 import { dashboardRoutes } from './routes/dashboard.ts'
+import { readingPositionRoutes } from './routes/reading-positions.ts'
 import { loadRestriction, profiles } from '@morrow/db'
 import { eq } from 'drizzle-orm'
 import type { EmailSender } from './email.ts'
@@ -81,6 +82,7 @@ const SUSPENDED_ALLOWED = new Set([
   'POST /api/v1/documents/:documentId/feedback/seen',
   'POST /api/v1/public/reading/:publicPath/view',
   'POST /api/v1/public/authors/:username/view',
+  'PUT /api/v1/me/reading/:publicPath/positions',
 ])
 /** What a muted account may not do: start conversations or pull people in. */
 const MUTED_BLOCKED = new Set([
@@ -259,6 +261,7 @@ export async function buildApp({ env, db, collab, email, logger }: AppDeps) {
       await v1.register(adminRoutes, { db })
       await v1.register(betaRoutes, { db })
       await v1.register(socialRoutes, { db })
+      await v1.register(readingPositionRoutes, { db })
       await v1.register(badgeRoutes, { db })
       await v1.register(dashboardRoutes, { db })
       await v1.register(contributionRoutes, { db })

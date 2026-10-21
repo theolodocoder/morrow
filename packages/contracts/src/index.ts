@@ -1122,6 +1122,22 @@ export const Feed = z.object({ items: z.array(FeedItem), nextCursor: z.string().
 export type Feed = z.infer<typeof Feed>
 export const LikeState = z.object({ liked: z.boolean(), likes: z.number().int() })
 
+// ---- Reading positions (spec call 6) ----
+export const ReadingPosition = z.object({
+  chapterSlug: z.string().max(240),
+  /** the paragraph (`data-block`) the reader had reached; null when the chapter has none */
+  blockId: z.string().max(120).nullable(),
+  percent: z.number().int().min(0).max(100),
+})
+/** Unknown or unpublished chapters are skipped, so a device's stale entries never fail the whole save. */
+export const SaveReadingPositions = z.object({ items: z.array(ReadingPosition).max(50) })
+export const ReadingPositions = z.object({
+  items: z.array(ReadingPosition),
+  /** the chapter read most recently, for Continue */
+  last: z.string().nullable(),
+})
+export type ReadingPositions = z.infer<typeof ReadingPositions>
+
 // ---- Reader comments on published works ----
 const ReaderCommentBase = z.object({
   id: z.uuid(),

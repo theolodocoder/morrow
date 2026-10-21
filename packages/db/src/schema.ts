@@ -18,6 +18,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -1128,6 +1129,29 @@ export const workLikes = pgTable(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.workId, t.userId] }), index('work_likes_user_idx').on(t.userId)],
+)
+
+/**
+ * How far each reader got in each chapter (spec call 6): the furthest paragraph and percent, never moving backwards,
+ * so Continue and "% read" survive re-reading an earlier page. `updated_at` moves on every save: the latest is Continue.
+ */
+export const readingPositions = pgTable(
+  'reading_positions',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    workId: uuid('work_id')
+      .notNull()
+      .references(() => works.id),
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => chapters.id),
+    blockId: text('block_id'),
+    percent: smallint('percent').notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.workId, t.chapterId] })],
 )
 
 /**

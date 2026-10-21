@@ -27,6 +27,7 @@ import {
   proposals,
   reactions,
   readerComments,
+  readingPositions,
   session,
   twoFactor,
   user,
@@ -110,6 +111,7 @@ export const accountRoutes: FastifyPluginAsyncZod<{ db: Database; auth: Auth }> 
       follows: await db.select().from(follows).where(eq(follows.followerId, me)),
       bookmarks: await db.select().from(bookmarks).where(eq(bookmarks.userId, me)),
       likes: await db.select().from(workLikes).where(eq(workLikes.userId, me)),
+      readingPositions: await db.select().from(readingPositions).where(eq(readingPositions.userId, me)),
       badges: await db.select().from(userAchievements).where(eq(userAchievements.userId, me)),
       blocks: await db.select().from(blocks).where(eq(blocks.blockerId, me)),
       notificationPreferences: await db
@@ -220,6 +222,7 @@ export async function deleteAccount(db: Database, me: string) {
       .delete(follows)
       .where(or(eq(follows.followerId, me), and(eq(follows.targetType, 'author'), eq(follows.targetId, me))))
     await tx.delete(bookmarks).where(eq(bookmarks.userId, me))
+    await tx.delete(readingPositions).where(eq(readingPositions.userId, me))
     await tx.delete(reactions).where(eq(reactions.userId, me))
     await tx.delete(contributionRequests).where(eq(contributionRequests.requesterId, me))
     await tx.delete(featureWaitlist).where(eq(featureWaitlist.userId, me))
