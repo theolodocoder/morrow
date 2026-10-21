@@ -109,10 +109,15 @@ export function ReaderFrame({
     }
     // Only scroll decides the head's visibility: phones fire `resize` as the URL bar collapses mid-read, and that
     // must not bring the head back.
+    // Never hide the head over keyboard focus: that would strand the user on an invisible control. Only
+    // :focus-visible counts, since a mouse click on Aa leaves focus on that button after the popover closes.
+    const keyboardFocusInHead = () => {
+      const el = document.activeElement
+      return !!el && !!headRef.current?.contains(el) && el.matches(':focus-visible')
+    }
     const onScroll = () => {
       const y = window.scrollY
-      // Never hide the head while focus is inside it: that would strand a keyboard user on an invisible control.
-      setHidden(y > last && y > 120 && !headRef.current?.contains(document.activeElement))
+      setHidden(y > last && y > 120 && !keyboardFocusInHead())
       last = y
       measure()
     }
