@@ -62,6 +62,19 @@ export function ChapterEnd({
           End of {label.toLowerCase()}
         </h2>
       )}
+      {/* the one visible way back (← also turns back); on a version's first chapter that is main's chapter it left */}
+      {chapter.prev && (
+        <p className="mt-1 text-center font-ui text-[13px]">
+          <Link
+            rel="prev"
+            href={routes.readChapter(work.publicPath, chapter.prev.slug)}
+            aria-label={`Previous chapter: ${chapter.prev.title}`}
+            className="rounded-sm text-secondary underline-offset-2 hover:text-primary hover:underline"
+          >
+            ← {chapter.prev.title}
+          </Link>
+        </p>
+      )}
       <div className="mb-6 mt-3 flex justify-center font-ui">
         <WorkActions
           publicPath={work.publicPath}
@@ -74,25 +87,28 @@ export function ChapterEnd({
         />
       </div>
 
-      {next && alternates.length > 0 ? (
+      {/* the fork shows even if main has no chapter after it yet: the versions are still a way on */}
+      {alternates.length > 0 ? (
         <div>
           <H className="mb-3 text-center font-ui text-[13px] font-normal text-secondary">
             The story splits here. Which way?
           </H>
           <ul className="flex flex-col gap-2.5">
-            <li>
-              <Link rel="next" href={nextHref} className={CARD_LINK}>
-                {/* the accent edge marks the obvious choice even on a night page, where the card colour alone would not */}
-                <div
-                  data-tone-scope="night"
-                  className={`${INK} border-action transition-colors hover:bg-raised`}
-                >
-                  <p className={META}>Main story · {nextMeta}</p>
-                  <p className={CARD_TITLE}>{next.title}</p>
-                  {teaser}
-                </div>
-              </Link>
-            </li>
+            {next && (
+              <li>
+                <Link rel="next" href={nextHref} className={CARD_LINK}>
+                  {/* the accent edge marks the obvious choice even on a night page, where the card colour alone would not */}
+                  <div
+                    data-tone-scope="night"
+                    className={`${INK} border-action transition-colors hover:bg-raised`}
+                  >
+                    <p className={META}>Main story · {nextMeta}</p>
+                    <p className={CARD_TITLE}>{next.title}</p>
+                    {teaser}
+                  </div>
+                </Link>
+              </li>
+            )}
             {alternates.map((a) => (
               <li key={a.slug}>
                 <Link

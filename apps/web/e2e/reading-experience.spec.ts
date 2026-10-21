@@ -223,6 +223,12 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await expect(reader.getByRole('heading', { name: 'The Long Stay', level: 1 })).toBeVisible()
   await expect(reader.getByText('Chapter three', { exact: true })).toBeVisible()
   const alternateUrl = new URL(reader.url()).pathname
+  // The running head counts the version's path (main's first two, then its own), and the way back leads to main.
+  await expect(reader.locator('header').getByText('3 / 3')).toBeVisible()
+  await expect(reader.getByRole('link', { name: 'Previous chapter: The Gate' })).toHaveAttribute(
+    'href',
+    new RegExp(`${chapter2}$`),
+  )
   await hydrated(reader)
   await reader.keyboard.press('ArrowLeft')
   await expect(reader).toHaveURL(new RegExp(`${chapter2}$`))

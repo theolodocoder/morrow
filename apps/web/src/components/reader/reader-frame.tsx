@@ -49,7 +49,7 @@ export function MarginCommentsSwitch({ label }: { label: string }) {
       >
         <span
           aria-hidden="true"
-          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-raised shadow-[0_1px_2px_rgb(34_34_31/.3)] transition-transform ${prefs.marginComments ? 'translate-x-4' : ''}`}
+          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-raised shadow-[0_1px_2px_rgb(34_34_31/.3)] transition-transform motion-reduce:transition-none ${prefs.marginComments ? 'translate-x-4' : ''}`}
         />
       </button>
     </div>
@@ -91,6 +91,7 @@ export function ReaderFrame({
   workTitle,
   chapterIndex,
   chapters,
+  fork,
   wordCount,
   prevHref,
   nextHref,
@@ -99,7 +100,10 @@ export function ReaderFrame({
   publicPath: string
   workTitle: string
   chapterIndex: number
+  /** the reader's path through the work: main's chapters, or on a version main's shared ones then its own */
   chapters: { title: string; slug: string }[]
+  /** on a version: where in `chapters` its own begin, and whose version it is (a divider in Contents) */
+  fork: { at: number; label: string } | null
   wordCount: number
   prevHref: string | null
   nextHref: string | null
@@ -194,7 +198,7 @@ export function ReaderFrame({
           ref={headRef}
           // Tabbing into a hidden head must show it, or focus would land on controls you cannot see.
           onFocus={() => setHidden(false)}
-          className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 ${hidden ? '-translate-y-full' : ''}`}
+          className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 motion-reduce:transition-none ${hidden ? '-translate-y-full' : ''}`}
         >
           <div className="mx-auto flex h-12 max-w-[72ch] items-center gap-1 px-2 text-[13px]">
             <Link
@@ -315,6 +319,11 @@ export function ReaderFrame({
           <ol className="-mx-2 flex flex-col">
             {chapters.map((c, i) => (
               <li key={c.slug}>
+                {fork && i === fork.at && (
+                  <p className="mx-2 mb-1 mt-3 border-t border-subtle pt-3 font-ui text-[12px] text-tertiary">
+                    {fork.label}
+                  </p>
+                )}
                 <Link
                   href={routes.readChapter(publicPath, c.slug)}
                   aria-current={i === chapterIndex ? 'page' : undefined}

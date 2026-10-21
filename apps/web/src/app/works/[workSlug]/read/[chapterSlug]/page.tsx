@@ -47,13 +47,24 @@ export default async function ReadChapterPage({ params }: Params) {
       `/reading/${encodeURIComponent(workSlug)}/comments?chapter=${encodeURIComponent(chapterSlug)}`,
     ).catch(() => null),
   ])
-  const label = sectionLabel(work.category, chapter.index, work.chapters.length)
+  // The reader's path, built as the API builds `chapter.index`: on a version, main's chapters up to where it splits
+  // off, then its own.
+  const version = chapter.version && work.versions.find((v) => v.slug === chapter.version!.slug)
+  const path = version
+    ? [...work.chapters.slice(0, version.afterChapter), ...version.chapters]
+    : work.chapters
+  const label = sectionLabel(work.category, chapter.index, path.length)
   return (
     <ReaderFrame
       publicPath={work.publicPath}
       workTitle={work.title}
       chapterIndex={chapter.index}
-      chapters={work.chapters}
+      chapters={path}
+      fork={
+        version
+          ? { at: version.afterChapter, label: `${version.name} · ${version.author.displayName}’s version` }
+          : null
+      }
       wordCount={chapter.wordCount}
       prevHref={chapter.prev ? routes.readChapter(work.publicPath, chapter.prev.slug) : null}
       nextHref={chapter.next ? routes.readChapter(work.publicPath, chapter.next.slug) : null}
@@ -84,7 +95,8 @@ export default async function ReadChapterPage({ params }: Params) {
           title={chapter.title}
           initial={discussion}
         />
-        {work.openToSuggestions && (
+        {/* suggestions go to the main story; a version's chapters aren't open to them */}
+        {work.openToSuggestions && !chapter.version && (
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3 font-ui">
             <p className="text-[13px] text-secondary">{work.author.displayName} welcomes suggestions.</p>
             <SuggestButton
