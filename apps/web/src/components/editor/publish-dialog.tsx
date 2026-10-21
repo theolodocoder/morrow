@@ -1,13 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { PublicationStatus, Work } from '@morrow/contracts'
+import type { AlternateStatus, Branch, Chapter, PublicationStatus, Work } from '@morrow/contracts'
 import { Checkbox } from 'react-aria-components'
 import { Button } from '@/components/ui/button'
-import { ChoiceGroup } from '@/components/ui/choice'
+import { ChoiceGroup, SelectField } from '@/components/ui/choice'
 import { Dialog } from '@/components/ui/dialog'
 import { InlineAlert } from '@/components/ui/inline-alert'
-import { api } from '@/lib/client-api'
+import { toast } from '@/components/ui/toast'
+import { api, ClientApiError } from '@/lib/client-api'
 import { routes } from '@/lib/routes'
 import { VISIBILITY_OPTIONS } from '@/lib/work-options'
 
@@ -159,6 +160,10 @@ export function PublishDialog({
           </div>
         )}
 
+        {live && work.capabilities.includes('work.publish') && (
+          <AlternateVersions workId={work.id} mainBranchName={status.branchName} />
+        )}
+
         {!confirming ? (
           <>
             <ChoiceGroup
@@ -208,5 +213,142 @@ export function PublishDialog({
         )}
       </div>
     </Dialog>
+  )
+}
+
+/**
+ * Alternate versions (reading-experience spec, owner decisions): the owner offers a branch beside the main story.
+ * The API judges eligibility; here we only explain what is already knowable from the branch list, and show the
+ * server's own words when it refuses.
+ */
+function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBranchName: string | null }) {
+  const [rows, setRows] = useState<{ alt: AlternateStatus; branch: Branch }[] | null>(null)
+  const [mainChapters, setMainChapters] = useState<Chapter[]>([])
+  const [mainId, setMainId] = useState<string | null>(null)
+  const [pick, setPick] = useState<Record<string, string>>({})
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [{ items: alts }, { items: branches }] = await Promise.all([
+          api<{ items: AlternateStatus[] }>(`/works/${workId}/alternates`),
+          api<{ items: Branch[] }>(`/works/${workId}/branches`),
+        ])
+        // Which branch readers get as main: known only when its name is unambiguous.
+        const named = branches.filter((b) => b.name === mainBranchName)
+        setMainId(named.length === 1 ? named[0]!.id : null)
+        const main = named.length === 1 ? named[0]! : branches.find((b) => b.isDefault)
+        if (main) setMainChapters((await api<{ items: Chapter[] }>(`/branches/${main.id}/chapters`)).items)
+        setRows(
+          alts.flatMap((alt) => {
+            const branch = branches.find((b) => b.id === alt.branchId)
+            return branch ? [{ alt, branch }] : []
+          }),
+        )
+      } catch {
+        setRows([])
+      }
+    })()
+  }, [workId, mainBranchName])
+
+  if (!rows?.length) return null
+
+  const act = async ({ alt, branch }: (typeof rows)[number]) => {
+    const unpublish = alt.published
+    setBusyId(alt.branchId)
+    setError(null)
+    try {
+      const next = await api<AlternateStatus>(
+        `/works/${workId}/branches/${alt.branchId}/${unpublish ? 'unpublish' : 'publish'}-alternate`,
+        {
+          method: 'POST',
+          body:
+            !unpublish && !branch.divergesAtChapterTitle ? { divergesAtChapterId: pick[alt.branchId] } : {},
+        },
+      )
+      // the server records the owner's pick as the branch's divergence, so republishing asks nothing more
+      const picked = mainChapters.find((c) => c.id === pick[alt.branchId])?.title ?? null
+      setRows(
+        (rs) =>
+          rs?.map((r) =>
+            r.alt.branchId === alt.branchId
+              ? {
+                  alt: next,
+                  branch: { ...r.branch, divergesAtChapterTitle: r.branch.divergesAtChapterTitle ?? picked },
+                }
+              : r,
+          ) ?? rs,
+      )
+      toast(unpublish ? 'Version unpublished.' : 'Version published.')
+    } catch (e) {
+      setError(
+        e instanceof ClientApiError
+          ? (e.problem.detail ?? e.message)
+          : e instanceof Error
+            ? e.message
+            : 'That didn’t work.',
+      )
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <section aria-labelledby="alt-versions" className="flex flex-col gap-2 border-t border-subtle pt-4">
+      <h3 id="alt-versions" className="text-sm font-medium text-primary">
+        Alternate versions
+      </h3>
+      <p className="text-[13px] text-secondary">
+        Readers can choose a version at the end of the chapter before it differs. It sits beside the main
+        story, never instead of it.
+      </p>
+      {error && <InlineAlert>{error}</InlineAlert>}
+      <ul className="flex flex-col gap-2">
+        {rows.map((r) => {
+          const { alt, branch } = r
+          const unseen = !alt.published && mainId !== null && branch.parentBranchId !== mainId
+          const needsPick = !alt.published && !unseen && !branch.divergesAtChapterTitle
+          return (
+            <li key={alt.branchId} className="flex flex-col gap-2 rounded-sm border border-subtle p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary">{alt.name}</p>
+                  {branch.description && <p className="text-[13px] text-secondary">{branch.description}</p>}
+                  <p className="text-[12px] text-tertiary">
+                    {alt.published
+                      ? `Published · ${alt.chapterCount === 1 ? '1 chapter' : `${alt.chapterCount} chapters`}`
+                      : unseen
+                        ? 'Starts from a version readers can’t see yet'
+                        : branch.divergesAtChapterTitle
+                          ? `Differs from ${branch.divergesAtChapterTitle}`
+                          : 'Not published'}
+                  </p>
+                </div>
+                {(alt.published || !unseen) && (
+                  <Button
+                    size="sm"
+                    variant={alt.published ? 'quiet' : 'secondary'}
+                    isDisabled={busyId !== null || (needsPick && !pick[alt.branchId])}
+                    onPress={() => void act(r)}
+                  >
+                    {alt.published ? 'Unpublish' : 'Publish version'}
+                  </Button>
+                )}
+              </div>
+              {needsPick && (
+                <SelectField
+                  label={`First chapter of “${alt.name}” that differs from the main story`}
+                  value={pick[alt.branchId] ?? ''}
+                  onChange={(v) => setPick((p) => ({ ...p, [alt.branchId]: v }))}
+                  options={mainChapters.slice(1).map((c) => ({ id: c.id, label: c.title }))}
+                />
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
