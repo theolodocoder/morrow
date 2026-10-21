@@ -5,6 +5,7 @@ import { twoFactor } from 'better-auth/plugins'
 import type { ApiEnv } from './env.ts'
 import type { EmailSender } from './email.ts'
 import { ensureProfile } from './routes/profiles.ts'
+import { requeueInvitationsFor } from './notifications.ts'
 
 export function createAuth(env: ApiEnv, db: Database, email: EmailSender) {
   // Not awaited: how long a send takes must not reveal whether an account exists.
@@ -46,6 +47,8 @@ export function createAuth(env: ApiEnv, db: Database, email: EmailSender) {
           'Confirm your email for Morrow',
           `Hi ${u.name},\n\nWelcome to Morrow. Confirm this is your email address:\n\n${url}\n\nIf you didn’t create an account, ignore this email.`,
         ),
+      // invitations sent before this point can be shown in-app now
+      afterEmailVerification: async (u) => requeueInvitationsFor(db, u.email),
     },
     advanced: {
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true, secure: env.NODE_ENV === 'production' },

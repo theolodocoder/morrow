@@ -426,6 +426,37 @@ const BADGE_EVENTS = new Set([
 ])
 
 /** Process up to `limit` outbox events. Safe to run concurrently on several instances. */
+/**
+ * An invitation only reaches Activity once its address is verified, and most people are invited before they verify.
+ * On verification, put the still-open invitations' events back in the outbox so the worker tells them now; the
+ * notification's dedupe key keeps a re-run from telling anyone twice.
+ */
+export async function requeueInvitationsFor(db: Database, email: string) {
+  await db
+    .update(activityEvents)
+    .set({ processedAt: null })
+    .where(
+      and(
+        eq(activityEvents.type, 'member.invited'),
+        eq(activityEvents.subjectType, 'invitation'),
+        inArray(
+          activityEvents.subjectId,
+          db
+            .select({ id: sql<string>`${invitations.id}::text` })
+            .from(invitations)
+            .where(
+              and(
+                sql`lower(${invitations.email}) = ${email.toLowerCase()}`,
+                isNull(invitations.acceptedAt),
+                isNull(invitations.revokedAt),
+                sql`${invitations.expiresAt} > now()`,
+              ),
+            ),
+        ),
+      ),
+    )
+}
+
 export async function processOutbox(db: Database, { limit = 200 } = {}) {
   return db.transaction(async (tx) => {
     const t = tx as unknown as Database

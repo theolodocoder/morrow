@@ -217,6 +217,26 @@ describe('notifications (PRD FR-030)', () => {
     ).toEqual({ workId: s.workId })
   })
 
+  it('an invitation sent before you verified reaches Activity once you do, exactly once', async () => {
+    const s = await scene()
+    const una = await signUp(ctx.app, 'Una')
+    await s.owner.call('POST', `/api/v1/works/${s.workId}/invitations`, { email: una.email, role: 'editor' })
+    await run()
+    expect((await inbox(una)).items).toHaveLength(0)
+
+    const link = ctx.email.outbox
+      .filter((m) => m.to === una.email && m.subject.startsWith('Confirm your email'))
+      .at(-1)!
+      .text.match(/http\S+verify-email\S+/)![0]
+    const verify = await ctx.app.inject({ method: 'GET', url: new URL(link).pathname + new URL(link).search })
+    expect(verify.statusCode).toBeLessThan(400)
+    await run()
+    await run() // a second pass must not notify again
+    const items = (await inbox(una)).items.filter((i) => i.category === 'invitations')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ title: 'Ama invited you to “The Orchard”', url: '/app/invitations' })
+  })
+
   it('read state, unread count, and no duplicates even when two workers run at once', async () => {
     const s = await scene()
     const bisi = await s.member('viewer', 'Bisi')
