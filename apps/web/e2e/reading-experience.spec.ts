@@ -28,6 +28,17 @@ async function rename(p: Page, from: string, to: string) {
   await expect(p.getByRole('link', { name: new RegExp(to) })).toBeVisible()
 }
 
+/**
+ * The collab server has `text`: a fresh tab loads the chapter from the server, not from this tab's unsent edits. The
+ * "Saved" indicator can't tell us, since it already shows from the previous save before new keystrokes go out.
+ */
+async function onServer(p: Page, text: string) {
+  const fresh = await p.context().newPage()
+  await fresh.goto(p.url())
+  await expect(editor(fresh)).toContainText(text)
+  await fresh.close()
+}
+
 /** The chapter's client code is live once the discussion knows whether the reader is signed in. */
 const hydrated = (p: Page) => expect(p.getByRole('button', { name: 'Join the conversation…' })).toBeVisible()
 
@@ -59,7 +70,7 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await status(owner, 'Saved')
   await editor(owner).click()
   await owner.keyboard.type('The salt had come up through the roots again.')
-  await status(owner, 'Saved')
+  await onServer(owner, 'The salt had come up through the roots again.')
   for (const [n, text] of [
     [2, 'She stood at the gate for a long time.'],
     [3, 'Ama locked the gate behind her and took the coast road.'],
@@ -69,7 +80,7 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
     await status(owner, 'Saved')
     await editor(owner).click()
     await owner.keyboard.type(text)
-    await status(owner, 'Saved')
+    await onServer(owner, text)
   }
   await rename(owner, 'Chapter 1', 'Salt')
   await rename(owner, 'Chapter 2', 'The Gate')
@@ -96,10 +107,9 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await editor(member).click()
   await member.keyboard.press('End')
   await member.keyboard.press('Enter')
-  await member.keyboard.type('Tolu wrote the long walk home, past the rows the frost had taken.', {
-    delay: 15,
-  })
-  await status(member, 'Saved')
+  const tolu = 'Tolu wrote the long walk home, past the rows the frost had taken.'
+  await member.keyboard.type(tolu, { delay: 15 })
+  await onServer(member, tolu)
 
   // Tolu branches where the story turns (chapter 3) and writes a long alternate chapter.
   await member.getByRole('button', { name: /Version: Main/ }).click()
@@ -122,9 +132,9 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
         `walked the rows and counted what the frost had spared, then wrote the count on the wall of the shed.`,
     )
   }
-  await expect(editor(member)).toContainText('Stay 24.')
-  await status(member, 'Saved')
-  // Closing the connection is what records Tolu's edit sessions, which credits are built from at publish.
+  await onServer(member, 'Stay 24.')
+  // Leaving a chapter's connection is what records an edit session (credits are built from them at publish):
+  // chapter 2's when Tolu moved to the branch, the branch's chapter 3's now.
   await memberCtx.close()
 
   // Owner publishes the main story, then Tolu's version beside it from the publish dialog.
@@ -200,9 +210,9 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await reader.getByRole('heading', { name: 'End of chapter two' }).scrollIntoViewIfNeeded()
   const paths = reader.locator('section').filter({ hasText: 'The story splits here. Which way?' })
   await expect(paths.getByRole('heading', { name: 'The story splits here. Which way?' })).toBeVisible()
-  await expect(paths.getByRole('link', { name: /Main story · Chapter three/ })).toContainText(
-    'The Coast Road',
-  )
+  const mainStory = paths.getByRole('link', { name: /Main story · Chapter three/ })
+  await expect(mainStory).toContainText('The Coast Road')
+  const mainChapter3 = (await mainStory.getAttribute('href'))!
   const alternate = paths.getByRole('link', { name: /If She Had Stayed/ })
   await expect(alternate).toContainText('Tolu Ade’s version · 1 chapter')
   await expect(alternate).toContainText('What if Ama never leaves the orchard?')
@@ -225,24 +235,11 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await reader.getByLabel('Password').fill(password)
   await reader.getByRole('button', { name: 'Sign in' }).click()
   await expect(reader).toHaveURL(new RegExp(`${chapter2}$`))
-  await expect(reader.getByRole('heading', { name: 'Talk about chapter two' })).toBeVisible()
-  const comment = `The gate scene stayed with me ${crypto.randomUUID().slice(0, 6)}.`
-  await reader.getByRole('textbox', { name: 'Talk about chapter two' }).fill(comment)
-  await reader.getByRole('button', { name: 'Post comment' }).click()
-  await expect(reader.locator('#discussion').getByText(comment)).toBeVisible()
-
-  // That chapter's discussion only: not chapter one's, not the version's, not the front page.
-  await reader.goto(chapter1)
-  await expect(reader.getByRole('heading', { name: 'Talk about chapter one' })).toBeVisible()
-  await expect(reader.getByText(comment)).toHaveCount(0)
-  await reader.goto(path)
-  await expect(reader.getByRole('heading', { name: title, level: 1 })).toBeVisible()
-  await expect(reader.getByText(comment)).toHaveCount(0)
+  await expect(reader.getByRole('textbox', { name: 'Talk about chapter two' })).toBeVisible() // signed in
 
   // Resume: halfway through Tolu's long chapter, then open it again.
   await reader.goto(alternateUrl)
-  await expect(reader.getByRole('heading', { name: 'Talk about chapter three' })).toBeVisible()
-  await expect(reader.getByRole('textbox', { name: 'Talk about chapter three' })).toBeVisible() // signed in
+  await expect(reader.getByRole('textbox', { name: 'Talk about chapter three' })).toBeVisible()
   await reader.evaluate(() => {
     const body = document.querySelector('.reading-body')!
     window.scrollTo(0, (body.getBoundingClientRect().bottom + window.scrollY - window.innerHeight) / 2)
@@ -265,6 +262,7 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
           },
           [`morrow:pos:${publicPath}`, alternateUrl.split('/').pop()!] as const,
         )),
+      { timeout: 15_000 },
     )
     .not.toBeNull()
   // Opened afresh (a new tab), since a reload lets the browser restore the scroll position by itself.
@@ -273,6 +271,28 @@ test('a reader starts, keeps reading, picks a path, joins the discussion, and re
   await expect(again.locator(`[data-block="${blockId}"]`)).toBeInViewport()
   await again.goto(path)
   await expect(again.getByRole('link', { name: /^Continue · The Long Stay · \d+%$/ })).toBeVisible()
+
+  // Each chapter's discussion holds its own comments only, and the work page's thread holds none of them. Every page
+  // first shows the comment posted there (so its list has loaded) before the others are checked absent.
+  const tag = crypto.randomUUID().slice(0, 6)
+  const threads = [
+    { url: chapter2, box: 'Talk about chapter two', text: `The gate scene stayed with me ${tag}.` },
+    { url: chapter1, box: 'Talk about chapter one', text: `Salt in the roots, what a start ${tag}.` },
+    { url: mainChapter3, box: 'Talk about chapter three', text: `The coast road broke my heart ${tag}.` },
+    { url: alternateUrl, box: 'Talk about chapter three', text: `I am glad she stayed ${tag}.` },
+    { url: path, box: 'Add a comment', text: `The whole book, in one word: salt ${tag}.` },
+  ]
+  for (const t of threads) {
+    if (new URL(reader.url()).pathname !== t.url) await reader.goto(t.url)
+    await reader.getByRole('textbox', { name: t.box }).fill(t.text)
+    await reader.getByRole('button', { name: 'Post comment' }).click()
+    await expect(reader.getByText(t.text)).toBeVisible()
+  }
+  for (const t of threads) {
+    await reader.goto(t.url)
+    await expect(reader.getByText(t.text)).toBeVisible()
+    for (const other of threads) if (other !== t) await expect(reader.getByText(other.text)).toHaveCount(0)
+  }
 
   await readerCtx.close()
 })
