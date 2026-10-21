@@ -216,13 +216,24 @@ function render(node: Node, key: string, notes: Notes): ReactNode {
 
 /**
  * `form` is the work's category: it sets the typography (indented fiction paragraphs, spaced article paragraphs,
- * numbered paper sections, stanza spacing for poetry). See `.reading-body[data-form]` in globals.css.
+ * numbered paper sections, stanza spacing for poetry). See `.reading-body[data-form]` in globals.css. `dropCap` opens
+ * the first paragraph with a drop cap (never on poetry), drawn by CSS so the first word still reads as one word.
  */
-export function RichText({ doc, className, form }: { doc: unknown; className?: string; form?: string }) {
+export function RichText({
+  doc,
+  className,
+  form,
+  dropCap,
+}: {
+  doc: unknown
+  className?: string
+  form?: string
+  dropCap?: boolean
+}) {
   const notes: Notes = { footnotes: [], citations: [] }
   const body = isNode(doc) ? children(doc, 'n', notes) : null
   return (
-    <div className={className} data-form={form}>
+    <div className={className} data-form={form} data-dropcap={dropCap || undefined}>
       {body}
       {notes.footnotes.length > 0 && (
         <section aria-label="Footnotes" className="footnotes">

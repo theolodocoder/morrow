@@ -61,28 +61,26 @@
   }
 }
 
-/* Manuscript typography (design system §4, §10): Literata, 68ch measure, comfortable rhythm. */
+/* Manuscript typography (design system §4, §10; Hearth): Literata 18/19/20px, 1.6 leading, 65ch measure. */
 .manuscript {
   font-family: var(--font-manuscript-family);
-  font-size: 17px;
-  line-height: 1.7;
+  font-size: 18px;
+  line-height: 1.6;
   color: var(--text-primary);
 }
 @media (min-width: 768px) {
   .manuscript {
-    font-size: 18px;
-    line-height: 1.75;
+    font-size: 19px;
   }
 }
 @media (min-width: 1024px) {
   .manuscript {
-    font-size: 19px;
-    line-height: 1.8;
+    font-size: 20px;
   }
 }
 .manuscript :is(.ProseMirror, .reading-body) {
   outline: none;
-  max-width: 68ch;
+  max-width: 65ch;
   margin-inline: auto;
   padding-bottom: 40vh;
 }
@@ -563,6 +561,31 @@
   text-indent: 0 !important;
   white-space: pre-wrap;
   margin: 0 0 1.25em;
+}
+
+/*
+ * Drop cap on a chapter's first paragraph (Hearth). ::first-letter keeps the word whole for screen readers. Poetry
+ * opens on the poem's own first line, so it never gets one. Where `initial-letter` is supported it sinks exactly
+ * three lines; elsewhere a floated letter sized to roughly the same depth stands in.
+ */
+.reading-body[data-dropcap]:not([data-form='poetry']) > p:first-of-type::first-letter {
+  float: left;
+  font-family: var(--font-display-family);
+  font-size: 4.6em;
+  line-height: 0.8;
+  padding: 0.06em 0.08em 0 0;
+  color: var(--text-accent);
+}
+@supports (initial-letter: 3) or (-webkit-initial-letter: 3) {
+  .reading-body[data-dropcap]:not([data-form='poetry']) > p:first-of-type::first-letter {
+    float: none;
+    font-size: inherit;
+    line-height: inherit;
+    padding: 0;
+    margin-right: 0.12em;
+    -webkit-initial-letter: 3;
+    initial-letter: 3;
+  }
 }
 
 /* The block handle (+ and ⋮⋮) sits in the margin beside the hovered block. */

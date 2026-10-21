@@ -1,7 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import type { PublicChapter, PublicWork } from '@morrow/contracts'
+import { sectionLabel } from '@morrow/domain'
 import { RichText } from '@/components/reader/rich-text'
+import { ChapterOpener } from '@/components/reader/chapter-opener'
 import { ReadingProgress } from '@/components/reader/reading-progress'
 import { SuggestButton } from '@/components/proposals/suggest-button'
 import { ParagraphComments } from '@/components/reader/paragraph-comments'
@@ -44,20 +46,19 @@ export default async function ReadChapterPage({ params }: Params) {
       chapters={work.chapters}
     >
       <ReadingProgress publicPath={work.publicPath} chapterSlug={chapter.slug} />
-      <main id="main" className="manuscript mx-auto max-w-[68ch] px-4 pb-16 pt-12 sm:pt-20">
-        <p className="text-center font-mono text-[11px] uppercase tracking-[0.12em] text-tertiary">
-          Chapter {chapter.index + 1}
-        </p>
-        <h1 className="mb-12 mt-3 text-center font-display text-[36px] leading-tight text-primary sm:text-[44px]">
-          {chapter.title}
-        </h1>
+      <main id="main" className="manuscript mx-auto max-w-[calc(65ch+2rem)] px-4 pb-16">
+        <ChapterOpener
+          label={sectionLabel(work.category, chapter.index, work.chapters.length)}
+          title={chapter.title}
+          credit={chapter.credit}
+        />
         {chapter.index === 0 && work.contentWarnings.length > 0 && (
           <p className="mb-10 rounded-sm border border-subtle bg-app px-3 py-2 font-ui text-[13px] text-secondary">
             <span className="font-medium text-primary">Content notes:</span> {work.contentWarnings.join(', ')}
           </p>
         )}
         <article>
-          <RichText doc={chapter.content} className="reading-body" form={work.category} />
+          <RichText doc={chapter.content} className="reading-body" form={work.category} dropCap />
         </article>
         <ViewPing publicPath={work.publicPath} />
         <ParagraphComments publicPath={work.publicPath} chapterSlug={chapter.slug} />

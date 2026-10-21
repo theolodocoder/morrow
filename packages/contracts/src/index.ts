@@ -3,23 +3,16 @@
  * client. Shapes here are the M1 subset; later milestones add to them without breaking existing fields.
  */
 import { z } from 'zod'
-import { CAPABILITIES, PARTICIPATION, PROPOSAL_KINDS, PROPOSAL_STATUSES, VISIBILITIES } from '@morrow/domain'
+import {
+  CAPABILITIES,
+  PARTICIPATION,
+  PROPOSAL_KINDS,
+  PROPOSAL_STATUSES,
+  VISIBILITIES,
+  WORK_CATEGORIES,
+} from '@morrow/domain'
 
-/** PRD FR-004 categories. `novella` and `collection` are kept from earlier works. */
-export const WORK_CATEGORIES = [
-  'fiction',
-  'novel',
-  'novella',
-  'short_story',
-  'collection',
-  'poetry',
-  'article',
-  'essay',
-  'research_paper',
-  'educational',
-  'general_document',
-  'other',
-] as const
+export { WORK_CATEGORIES }
 export const COLLABORATION_MODES = ['direct', 'mixed', 'proposal'] as const
 export const LICENSES = [
   'all_rights_reserved',
