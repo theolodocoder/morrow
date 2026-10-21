@@ -1,0 +1,193 @@
+# Production: the whole of Morrow on one machine (docs/DEPLOY.md).
+#   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --wait
+# Every value comes from .env.production (template: deploy/.env.production.example); each service gets only what it needs.
+# Only Caddy publishes ports. Start order: postgres healthy → migrate done → api healthy → collab healthy → web.
+
+x-service: &service
+  restart: unless-stopped
+  networks: [morrow]
+  logging:
+    driver: json-file
+    options: { max-size: '10m', max-file: '5' }
+
+x-node-health: &node-health
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 30s
+
+x-db-url: &db-url postgres://morrow:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/morrow
+
+# Read when the web app is built (next.config.ts rewrites, NEXT_PUBLIC_*), so they're build args as well as env.
+x-web-build-args: &web-build-args
+  API_INTERNAL_URL: http://api:4000
+  COLLAB_PUBLIC_URL: wss://collab.${MORROW_DOMAIN}
+  SITE_URL: https://${MORROW_DOMAIN}
+  ADMIN_PUBLIC_URL: ${ADMIN_PUBLIC_URL:-http://localhost:3002}
+  NEXT_PUBLIC_ICE_SERVERS: ${NEXT_PUBLIC_ICE_SERVERS:-[]}
+
+services:
+  caddy:
+    <<: *service
+    image: caddy:2.10-alpine
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      MORROW_DOMAIN: ${MORROW_DOMAIN:?set MORROW_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep, or Let's Encrypt rate limits bite on re-issue
+      - caddy_config:/config
+    depends_on:
+      web: { condition: service_started }
+      collab: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:2019/config/']
+      <<: *node-health
+    deploy: { resources: { limits: { memory: 256m } } }
+
+  postgres:
+    <<: *service
+    image: postgres:18
+    environment:
+      POSTGRES_USER: morrow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: morrow
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'morrow', '-d', 'morrow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # the default 64 MB /dev/shm is too small for parallel queries
+    shm_size: 256m
+    deploy: { resources: { limits: { memory: 2g } } }
+
+  migrate:
+    <<: *service
+    restart: 'no'
+    build: { context: ., dockerfile: apps/api/Dockerfile, target: migrate }
+    environment:
+      DATABASE_URL: *db-url
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  api:
+    <<: *service
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: *db-url
+      API_PORT: 4000
+      WEB_ORIGIN: https://${MORROW_DOMAIN}
+      COLLAB_PUBLIC_URL: wss://collab.${MORROW_DOMAIN}
+      COLLAB_INTERNAL_URL: http://collab:4001
+      ADMIN_ORIGIN: ${ADMIN_PUBLIC_URL:-http://localhost:3002}
+      AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET}
+      TICKET_SECRET: ${TICKET_SECRET:?set TICKET_SECRET}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?set INTERNAL_SECRET}
+      # Browsers reach the API only through web (Caddy → web → api). Caddy overwrites X-Forwarded-For with the real
+      # client address and web passes it on unchanged, so the API trusts exactly this network (the `morrow` subnet
+      # below) and nothing else. Change both together. See docs/DEPLOY.md, "Client IPs and rate limits".
+      TRUSTED_PROXIES: 172.30.0.0/24
+      AUTH_RATE_LIMIT_PER_MINUTE: ${AUTH_RATE_LIMIT_PER_MINUTE:-30}
+      PUBLIC_RATE_LIMIT_PER_MINUTE: ${PUBLIC_RATE_LIMIT_PER_MINUTE:-30}
+      API_RATE_LIMIT_PER_MINUTE: ${API_RATE_LIMIT_PER_MINUTE:-300}
+      DISCOVER_CACHE_MS: ${DISCOVER_CACHE_MS:-15000}
+      BILLING_ENABLED: 'false'
+      # Optional; left unset (not empty) when absent from the env file, which the API's validation requires.
+      RESEND_API_KEY:
+      EMAIL_FROM:
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      <<: *node-health
+    deploy: { resources: { limits: { memory: 1g } } }
+
+  collab:
+    <<: *service
+    build: { context: ., dockerfile: apps/collab/Dockerfile }
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: *db-url
+      COLLAB_PORT: 4001
+      TICKET_SECRET: ${TICKET_SECRET:?set TICKET_SECRET}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?set INTERNAL_SECRET}
+      ALLOWED_ORIGINS: https://${MORROW_DOMAIN}
+    depends_on:
+      api: { condition: service_healthy }
+    # Shutdown flushes every open document to Postgres before exit; give it time.
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4001/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      <<: *node-health
+    deploy: { resources: { limits: { memory: 1536m } } }
+
+  web:
+    <<: *service
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args: *web-build-args
+    environment:
+      <<: *web-build-args
+      NODE_ENV: production
+    depends_on:
+      api: { condition: service_healthy }
+      collab: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/robots.txt').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      <<: *node-health
+    deploy: { resources: { limits: { memory: 1536m } } }
+
+  # The staff console (optional): `--profile admin`. Not routed by Caddy; reach it over an SSH tunnel
+  # (ssh -L 3002:127.0.0.1:3002 <vm>, then http://localhost:3002). Staff need two-factor.
+  admin:
+    <<: *service
+    profiles: [admin]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args: { APP: admin, API_INTERNAL_URL: http://api:4000 }
+    environment:
+      NODE_ENV: production
+      API_INTERNAL_URL: http://api:4000
+    ports: ['127.0.0.1:3002:3000']
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test:
+        ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/').then(()=>process.exit(0),()=>process.exit(1))"]
+      <<: *node-health
+    deploy: { resources: { limits: { memory: 768m } } }
+
+networks:
+  morrow:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,34 @@
+# Caddy in front of Morrow (docker-compose.prod.yml). HTTPS is automatic: Let's Encrypt for a public domain, Caddy's own
+# local CA for "localhost" (the local smoke test). Caddy replaces any X-Forwarded-For a client sends with the address it
+# really sees, so the API's TRUSTED_PROXIES can trust the compose network without trusting the internet.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 30s
+			# no write timeout: it would cut long-lived WebSockets
+			idle 5m
+		}
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		>Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		-Server
+	}
+}
+
+{$MORROW_DOMAIN} {
+	import common
+	reverse_proxy web:3000
+}
+
+collab.{$MORROW_DOMAIN} {
+	import common
+	reverse_proxy collab:4001 {
+		# On a config reload, keep open editor connections for 5 minutes instead of dropping them at once.
+		stream_close_delay 5m
+	}
+}
