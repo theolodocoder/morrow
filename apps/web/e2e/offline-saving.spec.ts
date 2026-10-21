@@ -44,6 +44,20 @@ async function signIn(browser: Browser, email: string): Promise<[BrowserContext,
   return [ctx, p]
 }
 
+/** Remembers every label the save status shows, so a brief wrong one can't slip between assertions. */
+function recordStatus() {
+  const seen: string[] = ((window as unknown as { __seen: string[] }).__seen = [])
+  new MutationObserver(() =>
+    document.querySelectorAll('[role=status]').forEach((s) => seen.push(s.textContent ?? '')),
+  ).observe(document, { subtree: true, childList: true, characterData: true })
+}
+const seenLabels = (p: Page) => p.evaluate(() => (window as unknown as { __seen: string[] }).__seen.splice(0))
+
+const deviceCopies = (p: Page) =>
+  p.evaluate(async () =>
+    (await indexedDB.databases()).map((d) => d.name ?? '').filter((n) => n.startsWith('morrow:doc:')),
+  )
+
 /** Paragraph text without remote caret labels. */
 const paragraphs = (p: Page) =>
   editor(p).evaluate((root) =>
@@ -76,10 +90,30 @@ test('edits made offline survive closing the tab and sync when back online', asy
   await ctx.close()
 
   const ctx2 = await browser.newContext({ storageState: device })
+  // Hold the device's words on their way to the server: until the server has them, the label must not say "Saved".
+  let release = () => {}
+  await ctx2.routeWebSocket(/:4001/, (ws) => {
+    const server = ws.connectToServer()
+    const held: (string | Buffer)[] = []
+    let holding = true
+    ws.onMessage((m) => {
+      if (holding && m.toString().includes('signal')) held.push(m)
+      else server.send(m)
+    })
+    release = () => {
+      holding = false
+      held.splice(0).forEach((m) => server.send(m))
+    }
+  })
   const again = await ctx2.newPage()
+  await again.addInitScript(recordStatus)
   await again.goto(url)
   await expect(editor(again)).toContainText('The salt had come up through the roots again.')
   await expect(editor(again)).toContainText('Written on the train with no signal.')
+  await status(again, 'Saving…')
+  await again.waitForTimeout(1_500)
+  expect(await seenLabels(again)).not.toContain('Saved')
+  release()
   await status(again, 'Saved')
 
   // Another device proves the offline line reached the server, not just this browser's storage.
@@ -136,18 +170,8 @@ test('the save status is honest offline and recovers when back online', async ({
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
   await ownerWithChapter(page, `ama-${crypto.randomUUID()}@example.test`, 'First line.')
-  // Remember every label the status ever shows, so a brief wrong one can't slip between assertions.
-  await page.evaluate(() => {
-    const seen: string[] = ((window as unknown as { __seen: string[] }).__seen = [])
-    const record = () =>
-      document.querySelectorAll('[role=status]').forEach((s) => seen.push(s.textContent ?? ''))
-    new MutationObserver(record).observe(document.body, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    })
-  })
-  const seen = () => page.evaluate(() => (window as unknown as { __seen: string[] }).__seen.splice(0))
+  await page.evaluate(recordStatus)
+  const seen = () => seenLabels(page)
 
   // Offline and typing: never "Saving…" (nothing can reach the server), but saved on this device.
   await ctx.setOffline(true)
@@ -175,10 +199,7 @@ test('signing out clears this device’s copies of your documents', async ({ bro
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
   await ownerWithChapter(page, `ama-${crypto.randomUUID()}@example.test`, 'Kept on the device.')
-  const names = () =>
-    page.evaluate(async () =>
-      (await indexedDB.databases()).map((d) => d.name ?? '').filter((n) => n.startsWith('morrow:doc:')),
-    )
+  const names = () => deviceCopies(page)
   const before = await names()
   expect(before.length).toBeGreaterThan(0)
   const userId = before[0]!.split(':')[2]!
@@ -191,4 +212,99 @@ test('signing out clears this device’s copies of your documents', async ({ bro
     .poll(async () => (await names()).filter((n) => n.startsWith(`morrow:doc:${userId}:`)))
     .toEqual([])
   await ctx.close()
+})
+
+test('signing out never silently deletes writing the server hasn’t got', async ({ browser }) => {
+  const ctx = await browser.newContext()
+  const page = await ctx.newPage()
+  await ownerWithChapter(page, `ama-${crypto.randomUUID()}@example.test`, 'Online line.')
+  await ctx.setOffline(true)
+  await typeNewParagraph(page, 'Only on this device.')
+  await status(page, 'Saved on this device')
+  const device = await ctx.storageState({ indexedDB: true })
+  await ctx.close()
+
+  // Back online, but only on a page without the editor: nothing syncs, so the words are still only here.
+  const ctx2 = await browser.newContext({ storageState: device })
+  const p = await ctx2.newPage()
+  await p.goto('/app/library')
+  const before = await deviceCopies(p)
+  expect(before.length).toBeGreaterThan(0)
+  const signOut = async () => {
+    await p.getByRole('button', { name: 'Your account' }).click()
+    await p.getByRole('menuitem', { name: 'Sign out' }).click()
+  }
+  const dialog = p.getByRole('dialog', { name: 'Some writing hasn’t reached Morrow yet' })
+
+  await signOut()
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('It’s saved on this device only.')
+  await dialog.getByRole('button', { name: 'Stay signed in' }).click()
+  await expect(dialog).toHaveCount(0)
+  await expect(p).toHaveURL(/\/app\/library$/)
+  expect(await deviceCopies(p)).toEqual(before)
+
+  await signOut()
+  await dialog.getByRole('button', { name: 'Sign out and delete it' }).click()
+  await expect(p).toHaveURL(/\/sign-in$/)
+  await expect.poll(() => deviceCopies(p)).toEqual([])
+  await ctx2.close()
+})
+
+test('without IndexedDB, editing works as before and the tab asks before closing with unsent words', async ({
+  browser,
+}) => {
+  const ctx = await browser.newContext()
+  await ctx.addInitScript(() => {
+    IDBFactory.prototype.open = () => {
+      throw new DOMException('IndexedDB is disabled', 'SecurityError')
+    }
+  })
+  const page = await ctx.newPage()
+  const errors: string[] = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await ownerWithChapter(page, `ama-${crypto.randomUUID()}@example.test`, 'Typed without a device copy.')
+
+  await ctx.setOffline(true)
+  await typeNewParagraph(page, 'Unsent.')
+  await status(page, 'Offline') // not "Saved on this device": nothing holds the words but this tab
+  const asked = page.waitForEvent('dialog')
+  await page.close({ runBeforeUnload: true })
+  const d = await asked
+  expect(d.type()).toBe('beforeunload')
+  await d.dismiss()
+  expect(errors).toEqual([])
+  await ctx.close()
+})
+
+test('a view-only session keeps no copy on the device', async ({ browser }) => {
+  const aCtx = await browser.newContext()
+  const a = await aCtx.newPage()
+  await ownerWithChapter(a, `ama-${crypto.randomUUID()}@example.test`, 'Read, not written.')
+  const guestEmail = `tolu-${crypto.randomUUID()}@example.test`
+  await a.getByRole('button', { name: 'Share' }).click()
+  await a.getByLabel('Invite by email').fill(guestEmail)
+  await a.getByRole('button', { name: 'Create invitation' }).click()
+  const link = await a.getByLabel('Invitation link').inputValue()
+  await a.getByRole('button', { name: 'Done' }).click()
+  const bCtx = await browser.newContext()
+  const b = await bCtx.newPage()
+  await b.goto(link)
+  await b.getByRole('link', { name: 'Create an account to accept' }).click()
+  await signUp(b, 'Tolu Ade', guestEmail)
+  await b.getByRole('button', { name: 'Accept invitation' }).click()
+  await status(b, 'Saved')
+  expect((await deviceCopies(b)).length).toBe(1)
+
+  await a.getByRole('button', { name: 'Share' }).click()
+  await a.getByRole('button', { name: /Role for Tolu Ade/ }).click()
+  await a.getByRole('option', { name: 'Reader' }).click()
+  await a.getByRole('button', { name: 'Done' }).click()
+  await status(b, 'View only')
+  await expect.poll(() => deviceCopies(b)).toEqual([])
+  await b.reload()
+  await status(b, 'View only')
+  await expect.poll(() => deviceCopies(b)).toEqual([])
+  await aCtx.close()
+  await bCtx.close()
 })

@@ -6,7 +6,14 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import { CollabEvent, type CollabTicket } from '@morrow/contracts'
 import { SCHEMA_VERSION } from '@morrow/editor'
 import { api, ClientApiError } from '@/lib/client-api'
-import { deviceCopyName, rememberDeviceCopy } from '@/lib/device-copies'
+import {
+  deleteDeviceCopy,
+  deviceCopyName,
+  deviceStorageWorks,
+  isPendingWriting,
+  rememberDeviceCopy,
+  setPendingWriting,
+} from '@/lib/device-copies'
 import type { PresenceUser } from '@/lib/presence'
 
 /** What the writer needs to know about the safety of their words (design system §11). */
@@ -79,21 +86,32 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       socketUp = false,
       serverSynced = false,
       unsynced = 0,
-      onDevice = false // this document's IndexedDB store is open and takes every change
+      onDevice = false, // this document's IndexedDB store is open and takes every change
+      // the device copy holds changes the server hasn't confirmed (kept across tabs and visits, for sign-out)
+      pending = isPendingWriting(me.id, documentId)
     let savingTimer: ReturnType<typeof setTimeout> | undefined
     let live: HocuspocusProvider | null = null
     const settle = (s: CollabStatus) => {
       if (!terminal) setStatus(degraded && (s === 'saved' || s === 'saving') ? 'degraded' : s)
     }
+    const markPending = (p: boolean) => {
+      if (p === pending) return
+      pending = p
+      setPendingWriting(me.id, documentId, p)
+    }
     // One place turns the facts into the label, so no single event can leave a stale one behind.
     const refresh = () => {
       clearTimeout(savingTimer)
+      // Only the server's confirmation after a sync clears it: every unsent change has been applied there.
+      if (mode !== 'read' && serverSynced && unsynced === 0) markPending(false)
       if (!navigator.onLine || !socketUp) {
-        if (mode !== 'read' && unsynced > 0 && onDevice) settle('on-device')
+        if (mode !== 'read' && (unsynced > 0 || pending) && onDevice) settle('on-device')
         else settle(navigator.onLine ? 'reconnecting' : 'offline')
       } else if (mode === 'read') {
         if (serverSynced) settle('read-only')
       } else if (serverSynced && unsynced === 0) settle('saved')
+      // (Re)syncing words the server hasn't got yet: say so straight away, never "Saved" until it confirms.
+      else if (!serverSynced && pending) settle('saving')
       else if (unsynced > 0) savingTimer = setTimeout(() => settle('saving'), SAVING_DELAY_MS)
     }
     window.addEventListener('offline', refresh)
@@ -105,33 +123,49 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     window.addEventListener('beforeunload', leaving)
 
     // Words written offline are kept on the device until the server has them, so closing the tab can't lose them.
-    // Never cleared here (not on errors, not on "denied"): only sign-out clears it.
+    // Never cleared here on errors or "denied": sign-out clears it, and a view-only session drops it.
+    const name = deviceCopyName(me.id, documentId)
     let local: IndexeddbPersistence | null = null
-    try {
-      const name = deviceCopyName(me.id, documentId)
-      local = new IndexeddbPersistence(name, doc)
+    const openDeviceCopy = async () => {
+      // Without IndexedDB editing works as before, minus the device copy (and the tab asks before closing).
+      if (!(await deviceStorageWorks()) || cancelled || mode === 'read') return
+      let copy: IndexeddbPersistence
+      try {
+        copy = local = new IndexeddbPersistence(name, doc)
+      } catch {
+        return
+      }
       rememberDeviceCopy(name)
-      local._db.then(
+      await copy._db.then(
         (db) => {
+          if (local !== copy) return // dropped while opening (a view-only session, or unmounted): already closing
           onDevice = true
           // Another tab deleting the store (sign-out) closes it: stop writing to it instead of failing every edit.
-          db.onversionchange = () => {
-            onDevice = false
-            void local?.destroy()
-          }
+          db.onversionchange = () => dropDeviceCopy(false)
         },
-        () => {}, // unavailable (private mode, blocked): editing works as before, without the device copy
+        () => {},
       )
-    } catch {
-      local = null
+      if (onDevice) await copy.whenSynced
     }
+    const dropDeviceCopy = (remove: boolean) => {
+      const l = local
+      local = null
+      onDevice = false
+      void Promise.resolve(l?.destroy())
+        .catch(() => {})
+        .then(() => (remove ? deleteDeviceCopy(name) : undefined))
+    }
+    // Your own edits mark the copy pending; the server's updates and the copy's own reload (before connecting) don't.
+    const onUpdate = (_: Uint8Array, origin: unknown) => {
+      if (origin === live || (origin === local && !live) || mode === 'read' || !onDevice) return
+      markPending(true)
+    }
+    doc.on('update', onUpdate)
     // Load the device copy first, so unsent words are part of the first sync with the server.
-    const loaded = new Promise<void>((resolve) => {
-      setTimeout(resolve, DEVICE_LOAD_MAX_MS)
-      if (!local) return resolve()
-      void local.whenSynced.then(() => resolve())
-      local._db.catch(() => resolve())
-    })
+    const loaded = Promise.race([
+      openDeviceCopy(),
+      new Promise((resolve) => setTimeout(resolve, DEVICE_LOAD_MAX_MS)),
+    ])
 
     void loaded.then(() => {
       if (cancelled) return
@@ -144,6 +178,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
           try {
             const t = await api<CollabTicket>('/collab/tickets', { method: 'POST', body: { documentId } })
             mode = t.mode
+            // A viewer can't have unsent edits: keep nothing on the device (unless it still holds earlier ones).
+            if (mode === 'read') dropDeviceCopy(!pending)
             return JSON.stringify({ ticket: t.ticket, schemaVersion: SCHEMA_VERSION })
           } catch (err) {
             // No ticket means no access any more (removed, or the work was deleted).
@@ -237,7 +273,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       window.removeEventListener('online', refresh)
       window.removeEventListener('beforeunload', leaving)
       live?.destroy()
-      void local?.destroy().catch(() => {})
+      doc.off('update', onUpdate)
+      dropDeviceCopy(false)
       doc.destroy()
       setCollab(null)
       lastRoster.current = null

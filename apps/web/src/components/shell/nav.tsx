@@ -11,6 +11,8 @@ import type { AvatarConfig } from '@morrow/contracts'
 import { Logo, LogoMark } from '@/components/brand/logo'
 import { FeedbackDialog } from '@/components/feedback-dialog'
 import { Avatar } from '@/components/profile/avatar'
+import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import {
   BadgeIcon,
   BellIcon,
@@ -27,7 +29,7 @@ import {
   ChaptersIcon,
 } from '@/components/ui/icons'
 import { api } from '@/lib/client-api'
-import { clearDeviceCopies } from '@/lib/device-copies'
+import { clearDeviceCopies, hasPendingWriting } from '@/lib/device-copies'
 import { routes } from '@/lib/routes'
 import { useUnread } from './use-unread'
 import { WriteSheet } from './write-sheet'
@@ -82,6 +84,13 @@ function UnreadDot({ count, className = '' }: { count: number; className?: strin
 export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean }) {
   const router = useRouter()
   const [feedback, setFeedback] = useState(false)
+  const [unsent, setUnsent] = useState(false)
+  const signOut = async () => {
+    await api('/api/auth/sign-out', { method: 'POST', body: {} })
+    await clearDeviceCopies(me.id)
+    router.replace('/sign-in')
+    router.refresh()
+  }
   const item =
     'flex cursor-default items-center gap-2.5 rounded-sm px-3 py-2 text-sm text-primary outline-none data-[focused]:bg-hover'
   return (
@@ -110,11 +119,10 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
             className="outline-none"
             onAction={async (key) => {
               if (key === 'feedback') setFeedback(true)
+              // Sign-out deletes this device's copies: never silently when one holds words the server hasn't got.
               if (key === 'signout') {
-                await api('/api/auth/sign-out', { method: 'POST', body: {} })
-                await clearDeviceCopies(me.id)
-                router.replace('/sign-in')
-                router.refresh()
+                if (hasPendingWriting(me.id)) setUnsent(true)
+                else await signOut()
               }
             }}
           >
@@ -141,6 +149,20 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
         </Popover>
       </MenuTrigger>
       <FeedbackDialog isOpen={feedback} onOpenChange={setFeedback} />
+      <Dialog title="Some writing hasn’t reached Morrow yet" isOpen={unsent} onOpenChange={setUnsent}>
+        <p className="text-sm text-secondary">
+          It’s saved on this device only. Go back online and open Morrow so it can sync, or sign out and
+          delete it.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <Button variant="danger" onPress={() => void signOut()}>
+            Sign out and delete it
+          </Button>
+          <Button variant="primary" autoFocus onPress={() => setUnsent(false)}>
+            Stay signed in
+          </Button>
+        </div>
+      </Dialog>
     </>
   )
 }
