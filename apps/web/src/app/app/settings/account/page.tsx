@@ -12,7 +12,7 @@ export default async function AccountSettingsPage() {
     <AppPage title="Settings">
       <SettingsNav current="Account" />
       <h1 className="font-display text-[22px] leading-tight text-primary">Account</h1>
-      <AccountSettings email={me.email} verified={me.emailVerified} />
+      <AccountSettings userId={me.id} email={me.email} verified={me.emailVerified} />
     </AppPage>
   )
 }

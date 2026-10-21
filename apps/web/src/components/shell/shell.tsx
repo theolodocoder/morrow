@@ -48,6 +48,7 @@ export async function Shell({
       </div>
     )
   const shellUser = {
+    id: me.id,
     name: me.name,
     username: me.username,
     avatarSeed: me.avatarSeed,

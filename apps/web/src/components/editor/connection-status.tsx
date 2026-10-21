@@ -5,6 +5,11 @@ const COPY: Record<CollabStatus, { label: string; dot: string; detail?: string }
   connecting: { label: 'Connecting…', dot: 'bg-control' },
   saved: { label: 'Saved', dot: 'bg-success' },
   saving: { label: 'Saving…', dot: 'bg-control' },
+  'on-device': {
+    label: 'Saved on this device',
+    dot: 'bg-warning',
+    detail: 'Your changes are kept on this device and will sync when you reconnect.',
+  },
   offline: {
     label: 'Offline',
     dot: 'bg-warning',

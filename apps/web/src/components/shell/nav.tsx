@@ -27,11 +27,13 @@ import {
   ChaptersIcon,
 } from '@/components/ui/icons'
 import { api } from '@/lib/client-api'
+import { clearDeviceCopies } from '@/lib/device-copies'
 import { routes } from '@/lib/routes'
 import { useUnread } from './use-unread'
 import { WriteSheet } from './write-sheet'
 
 export interface ShellUser {
+  id: string
   name: string
   username: string | null
   avatarSeed: string
@@ -110,6 +112,7 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
               if (key === 'feedback') setFeedback(true)
               if (key === 'signout') {
                 await api('/api/auth/sign-out', { method: 'POST', body: {} })
+                await clearDeviceCopies(me.id)
                 router.replace('/sign-in')
                 router.refresh()
               }

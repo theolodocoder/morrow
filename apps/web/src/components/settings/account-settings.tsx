@@ -9,11 +9,20 @@ import { InlineAlert } from '@/components/ui/inline-alert'
 import { TextField } from '@/components/ui/text-field'
 import { toast } from '@/components/ui/toast'
 import { api, ClientApiError } from '@/lib/client-api'
+import { clearDeviceCopies } from '@/lib/device-copies'
 
 const section = 'flex flex-col gap-3 rounded-xl border border-subtle bg-canvas p-5'
 const heading = 'text-[15px] font-semibold text-primary'
 
-export function AccountSettings({ email, verified }: { email: string; verified: boolean }) {
+export function AccountSettings({
+  userId,
+  email,
+  verified,
+}: {
+  userId: string
+  email: string
+  verified: boolean
+}) {
   const router = useRouter()
   const [pwError, setPwError] = useState<string | null>(null)
   const [pwBusy, setPwBusy] = useState(false)
@@ -70,6 +79,7 @@ export function AccountSettings({ email, verified }: { email: string; verified: 
         method: 'POST',
         body: { password: String(f.get('password') ?? ''), confirm: String(f.get('confirm') ?? '') },
       })
+      await clearDeviceCopies(userId)
       router.replace('/?deleted=1')
       router.refresh()
     } catch (err) {
