@@ -9,14 +9,16 @@ import { compact } from '@/lib/format'
 import { routes } from '@/lib/routes'
 
 /*
- * The dark ink card borrows the night tone's tokens (`.reader[data-tone='night']` re-declares them for its subtree),
+ * The dark ink card borrows the night tone's tokens (`[data-tone-scope='night']` re-declares them for its subtree),
  * so every pairing inside it is one the token contrast tests already cover, on paper, sepia and night pages alike.
  */
-const INK = 'reader rounded-[18px] border bg-canvas px-5 pb-5 pt-[18px] text-primary'
+const INK = 'rounded-[18px] border bg-canvas px-5 pb-5 pt-[18px] text-primary'
 const META = 'flex items-center gap-1.5 font-ui text-[12px] text-secondary'
 const CARD_TITLE = 'mb-1.5 mt-1 font-display text-[26px] leading-tight text-primary sm:text-[28px]'
 const TEASER = 'font-manuscript text-[15px] italic leading-normal text-secondary'
 // Whole-card links: the page tone's own focus ring, drawn outside the card where it contrasts with the page.
+// Page-toned parts carry no colour transition: the saved tone applies just after load, and fading into it would
+// pass through unreadable in-between colours.
 const CARD_LINK = 'block rounded-[18px] focus-visible:outline-offset-4'
 const NOTE = 'mt-4 text-center font-ui text-[13px] text-secondary'
 
@@ -81,7 +83,10 @@ export function ChapterEnd({
             <li>
               <Link rel="next" href={nextHref} className={CARD_LINK}>
                 {/* the accent edge marks the obvious choice even on a night page, where the card colour alone would not */}
-                <div data-tone="night" className={`${INK} border-action transition-colors hover:bg-raised`}>
+                <div
+                  data-tone-scope="night"
+                  className={`${INK} border-action transition-colors hover:bg-raised`}
+                >
                   <p className={META}>Main story · {nextMeta}</p>
                   <p className={CARD_TITLE}>{next.title}</p>
                   {teaser}
@@ -92,7 +97,7 @@ export function ChapterEnd({
               <li key={a.slug}>
                 <Link
                   href={routes.readChapter(work.publicPath, a.firstChapter.slug)}
-                  className={`${CARD_LINK} border border-subtle bg-canvas px-5 pb-4 pt-4 transition-colors hover:bg-hover`}
+                  className={`${CARD_LINK} border border-subtle bg-canvas px-5 pb-4 pt-4 hover:bg-hover`}
                 >
                   <p className={META}>
                     <Avatar
@@ -113,7 +118,7 @@ export function ChapterEnd({
           <p className={NOTE}>You can come back and read the other way any time</p>
         </div>
       ) : next ? (
-        <div data-tone="night" className={`${INK} border-subtle`}>
+        <div data-tone-scope="night" className={`${INK} border-subtle`}>
           <p className={META}>Up next · {nextMeta}</p>
           <H className={CARD_TITLE}>{next.title}</H>
           {teaser}
@@ -172,7 +177,7 @@ function VersionEnd({
       {main && (
         <Link
           href={routes.readChapter(work.publicPath, main.slug)}
-          className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full bg-action px-5 py-2 text-[15px] font-medium text-action-fg transition-colors hover:bg-action-hover"
+          className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full bg-action px-5 py-2 text-[15px] font-medium text-action-fg hover:bg-action-hover"
         >
           Read the main story from chapter {version!.afterChapter + 1}
         </Link>

@@ -33,7 +33,9 @@ ${vars(light)}
 ${vars(sepia)}
   color-scheme: light;
 }
-.reader[data-tone='night'] {
+/* A night-toned island inside any page (the reader's dark "Up next" card), without a second reader frame. */
+.reader[data-tone='night'],
+[data-tone-scope='night'] {
 ${vars(dark)}
   color-scheme: dark;
 }
