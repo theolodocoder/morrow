@@ -6,6 +6,7 @@
  *   LOAD_API=http://127.0.0.1:4030 LOAD_COLLAB=ws://127.0.0.1:4031 LOAD_WRITERS=25 LOAD_SECONDS=60 \
  *     pnpm --filter @morrow/collab load-writers
  * Also LOAD_RATE (keys/s per writer, default 5), LOAD_ORIGIN, LOAD_COLLAB_PID (else found by port with lsof).
+ * Refuses non-loopback API, collab or database, and NODE_ENV=production, unless LOAD_ALLOW_REMOTE=1.
  * Exits 1 on a correctness failure: lost edits, replicas that never converge, or a stored state that differs.
  * Prints metrics only: never text, Yjs updates, awareness, cookies, tickets or invitation links.
  * Leaves its accounts (load-<tag>-*@example.test) and works behind, like any other dev data.
@@ -32,6 +33,23 @@ const RATE = Number(process.env.LOAD_RATE ?? 5)
 const TAG = `${Date.now().toString(36)}${randomBytes(2).toString('hex')}`
 /** the seeded paragraph every writer also types into */
 const SHARED = 1
+
+// It signs up accounts, comps a plan and writes invitation rows: never against a shared or production system unless
+// someone says so explicitly.
+const loopback = (u: string) => {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(u).hostname)
+  } catch {
+    return false
+  }
+}
+const remote = [API, COLLAB, process.env.DATABASE_URL ?? ''].filter((u) => !loopback(u))
+if (process.env.LOAD_ALLOW_REMOTE !== '1' && (remote.length || process.env.NODE_ENV === 'production')) {
+  console.error(
+    `load-writers: refusing to run (${process.env.NODE_ENV === 'production' ? 'NODE_ENV=production' : `${remote.length} non-loopback target(s) among LOAD_API, LOAD_COLLAB, DATABASE_URL`}). Set LOAD_ALLOW_REMOTE=1 to override.`,
+  )
+  process.exit(2)
+}
 
 const { db, pool } = createDb(process.env.DATABASE_URL!, { max: 2 })
 

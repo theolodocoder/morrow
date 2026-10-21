@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import WebSocket from 'ws'
 import { createDb, documentProjections, documentSnapshots, workMembers } from '@morrow/db'
 import { mintTicket, signInternal, INTERNAL_SIGNATURE_HEADER } from '@morrow/domain/signing'
@@ -193,11 +193,15 @@ describe('authorization (ticket + database re-check, enforced on the server)', (
     const s = await seedChapter(db.db)
     // Hold the room's first load (a big chapter, a slow database) while the whole burst authenticates.
     const blocker = await db.pool.connect()
-    await blocker.query('begin; lock table document_states in access exclusive mode')
-    const burst = Array.from({ length: 12 }, () => track(connect(p, s.documentId, s.users.owner!)))
-    await new Promise((r) => setTimeout(r, 1000))
-    await blocker.query('commit')
-    blocker.release()
+    let burst: ReturnType<typeof connect>[] = []
+    try {
+      await blocker.query('begin; lock table document_states in access exclusive mode')
+      burst = Array.from({ length: 12 }, () => track(connect(p, s.documentId, s.users.owner!)))
+      await new Promise((r) => setTimeout(r, 1000))
+    } finally {
+      await blocker.query('commit').catch(() => {})
+      blocker.release()
+    }
     await waitFor(() => burst.every((c) => c.provider.isSynced || c.events.authFailed.length > 0), 10_000)
     expect(burst.filter((c) => c.provider.isSynced)).toHaveLength(5)
     expect(burst.flatMap((c) => c.events.authFailed)).toEqual(Array(7).fill('room_full'))
@@ -251,6 +255,50 @@ describe('snapshots', () => {
     await waitFor(async () => (await snapshots()).length > 0, 5000, 'auto snapshot')
     await new Promise((r) => setTimeout(r, 1000)) // every disconnect has run its hook by now
     expect(await snapshots()).toHaveLength(1)
+  })
+
+  it('the "everyone left" version includes an edit that lands while it is being taken', async () => {
+    const p = await start({ ACCESS_RECHECK_MS: '0' })
+    const s = await seedChapter(db.db)
+    const a = track(connect(p, s.documentId, s.users.owner!))
+    const b = track(connect(p, s.documentId, s.users.owner!))
+    await waitFor(() => a.provider.isSynced && b.provider.isSynced)
+    writeParagraph(a.doc, 'Before leaving.')
+    await waitFor(async () => (await projection(s.documentId))?.wordCount === 2)
+    await new Promise((r) => setTimeout(r, 300)) // a has nothing in flight
+    const recheck = await db.pool.connect() // stalls every access re-check, so b's last edit waits
+    const snapshotting = await db.pool.connect() // stalls the snapshot a's leaving starts
+    try {
+      await recheck.query('begin; lock table account_restrictions in access exclusive mode')
+      await snapshotting.query('begin; lock table document_snapshots in access exclusive mode')
+      writeParagraph(b.doc, 'Last words.')
+      b.close() // b leaves first, its edit still waiting
+      await new Promise((r) => setTimeout(r, 200))
+      // a drops without a goodbye message (nothing for it to wait on): the room is empty, a snapshot starts.
+      const socket = a.provider.configuration.websocketProvider
+      socket.shouldConnect = false
+      ;(socket.webSocket as unknown as { terminate(): void }).terminate()
+      await new Promise((r) => setTimeout(r, 300))
+      await recheck.query('commit') // b's edit lands and b's disconnect finds the snapshot in flight
+      await new Promise((r) => setTimeout(r, 300))
+    } finally {
+      await recheck.query('rollback').catch(() => {})
+      await snapshotting.query('commit').catch(() => {})
+      recheck.release()
+      snapshotting.release()
+    }
+    await waitFor(async () => (await projection(s.documentId))?.wordCount === 4, 5000, 'final save')
+    const latest = async () =>
+      (
+        await db.db
+          .select()
+          .from(documentSnapshots)
+          .where(eq(documentSnapshots.documentId, s.documentId))
+          .orderBy(desc(documentSnapshots.createdAt))
+          .limit(1)
+      )[0]
+    await waitFor(async () => (await latest())?.wordCount === 4, 3000, 'snapshot with the last edit')
+    expect((await latest())!.contentJson).toEqual((await projection(s.documentId))!.contentJson)
   })
 
   it('records one automatic snapshot per state, even when asked concurrently', async () => {

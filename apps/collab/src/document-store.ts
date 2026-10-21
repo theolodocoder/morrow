@@ -4,7 +4,7 @@
  */
 import * as Y from 'yjs'
 import { createHash } from 'node:crypto'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { documentProjections, documentSnapshots, documentStates, type Database } from '@morrow/db'
 import { project } from '@morrow/editor/server'
 
@@ -117,13 +117,14 @@ export function createDocumentStore(db: Database) {
       const contentHash = createHash('sha256').update(JSON.stringify(p.contentJson)).digest('hex')
       const state = Y.encodeStateAsUpdate(doc)
       return db.transaction(async (tx) => {
-        // One snapshot at a time per document, across collab instances: concurrent callers would otherwise all
-        // compare against the same latest snapshot and each record a duplicate (load test R3: 56 from one room).
+        // One snapshot decision at a time per document, across collab instances: concurrent callers would otherwise
+        // all compare against the same latest snapshot and each record a duplicate (load test R3: 56 from one room).
+        // It orders the decisions, not the content: each caller encoded its state before waiting here.
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${documentId}, 0))`)
         const [last] = await tx
           .select({ contentHash: documentSnapshots.contentHash })
           .from(documentSnapshots)
-          .where(eq(documentSnapshots.documentId, documentId))
+          .where(and(eq(documentSnapshots.workId, workId), eq(documentSnapshots.documentId, documentId)))
           .orderBy(sql`${documentSnapshots.createdAt} desc`)
           .limit(1)
         // Automatic snapshots skip unchanged content; a writer's explicit "save version" always records.
@@ -140,7 +141,7 @@ export function createDocumentStore(db: Database) {
             reason,
             label: options.label ?? null,
             createdBy: options.createdBy ?? null,
-            // Insert time, not transaction start (spent waiting for the lock): "latest" must follow lock order.
+            // Insert time, not transaction start (which includes waiting for the lock): "latest" is the last decided.
             createdAt: sql`clock_timestamp()`,
           })
           .returning()

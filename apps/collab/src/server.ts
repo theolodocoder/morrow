@@ -64,8 +64,9 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
     string,
     { documentId: string; workId: string; userId: string; startedAt: Date; updates: number }
   >()
-  /** Rooms whose "everyone left" snapshot is being taken: a room emptying at once fires it for every connection. */
+  /** Rooms whose "everyone left" snapshot is being taken, and those that changed again meanwhile. */
   const quietSnapshots = new Set<string>()
+  const quietAgain = new Set<string>()
 
   // Places taken between the cap check and Hocuspocus counting the connection. A cold room loads in between, so
   // without them every connection in a burst sees the same empty room and all are let in.
@@ -295,6 +296,7 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
     },
 
     async onDisconnect({ documentName, document, clientsCount, context, socketId }) {
+      placeTaken(documentName, socketId) // closed before `connected` (e.g. while the room loaded)
       await voice.drop(documentName, socketId, true)
       const key = `${socketId}:${documentName}`
       const session = sessions.get(key)
@@ -306,13 +308,24 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
           .catch((err) => log.error({ ev: 'edit_session_failed', doc: documentName, err: String(err) }))
       }
       // clientsCount is read after each connection's pending messages, so in a busy room that empties at once many
-      // disconnects see 0. One snapshot covers them all; the store also refuses duplicates of the same state.
-      if (clientsCount > 0 || !context?.workId || context.readOnly || quietSnapshots.has(documentName)) return
+      // disconnects see 0. Coalesce them: one runs the snapshot, and runs it again if another disconnect's edits
+      // landed meanwhile (the store skips a repeat of the same state).
+      if (clientsCount > 0 || !context?.workId || context.readOnly) return
+      if (quietSnapshots.has(documentName)) {
+        quietAgain.add(documentName)
+        return
+      }
       quietSnapshots.add(documentName)
-      await store
-        .snapshot(documentName, context.workId, document, 'auto')
-        .catch((err) => log.error({ ev: 'snapshot_failed', doc: documentName, err: String(err) }))
-        .finally(() => quietSnapshots.delete(documentName))
+      try {
+        do {
+          quietAgain.delete(documentName)
+          await store
+            .snapshot(documentName, context.workId, document, 'auto')
+            .catch((err) => log.error({ ev: 'snapshot_failed', doc: documentName, err: String(err) }))
+        } while (quietAgain.has(documentName))
+      } finally {
+        quietSnapshots.delete(documentName)
+      }
     },
 
     async afterUnloadDocument({ documentName }) {
