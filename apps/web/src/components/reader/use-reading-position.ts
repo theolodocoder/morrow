@@ -1,7 +1,7 @@
 'use client'
 import { useEffect } from 'react'
 import type { ReadingPositions } from '@morrow/contracts'
-import { mergePositions, type Position } from '@morrow/domain'
+import { aheadOf, mergePositions, type Position } from '@morrow/domain'
 
 /** What this device remembers for one work: each chapter's furthest point and the chapter read last. */
 type Saved = { last: string | null; items: Position[] }
@@ -9,6 +9,8 @@ type Saved = { last: string | null; items: Position[] }
 const key = (publicPath: string) => `morrow:pos:${publicPath}`
 const url = (publicPath: string) => `/api/v1/me/reading/${encodeURIComponent(publicPath)}/positions`
 const SERVER_EVERY_MS = 5000
+/** the API takes 50 a save; one place is kept for the chapter being read */
+const MERGE_LIMIT = 49
 
 /** The device's saved positions; anything unreadable counts as nothing saved (storage is only a convenience). */
 function readLocal(publicPath: string): Saved {
@@ -49,18 +51,20 @@ async function fetchServer(publicPath: string): Promise<ReadingPositions | null>
   }
 }
 
-function sendServer(publicPath: string, items: Position[]) {
+/** Whether the account took the save; a failure (rate limit, outage, offline) is retried on the next flush. */
+function sendServer(publicPath: string, items: Position[]): Promise<boolean> {
   // keepalive lets the last save outlive the page; same-origin, so the session cookie goes with it
-  void fetch(url(publicPath), {
+  return fetch(url(publicPath), {
     method: 'PUT',
     credentials: 'same-origin',
     keepalive: true,
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ items }),
-  }).catch(() => {})
+  }).then(
+    (res) => res.ok,
+    () => false,
+  )
 }
-
-const allSlugs = (...lists: Position[][]) => [...new Set(lists.flat().map((p) => p.chapterSlug))]
 
 /**
  * Read-only, for the work's front page: how far this reader got in each chapter and the one to continue. The account's
@@ -85,8 +89,11 @@ export async function loadReadingPositions(
  * and how far through the text they are, furthest point kept. Saved on the device at once and, when signed in, to
  * the account every few seconds and as the page goes. Opening a chapter part-read returns to that paragraph.
  */
-export function useReadingPosition(publicPath: string, chapterSlug: string) {
+export function useReadingPosition(publicPath: string, chapterSlug: string, liveSlugs: string[]) {
+  // a stable dependency: the page hands over a new array each render
+  const live = liveSlugs.join(' ')
   useEffect(() => {
+    const liveList = live.split(' ')
     const body = document.querySelector<HTMLElement>('.reading-body')
     const blocks = [...document.querySelectorAll<HTMLElement>('.reading-body [data-block]')]
     const local = readLocal(publicPath)
@@ -104,12 +111,18 @@ export function useReadingPosition(publicPath: string, chapterSlug: string) {
       const items = readLocal(publicPath).items.filter((p) => p.chapterSlug !== chapterSlug)
       writeLocal(publicPath, { last: chapterSlug, items: [...items, here] })
     }
+    // Cleared only once the account has the save, so a failed one goes again with the next flush (every few
+    // seconds at most, never in a loop). Saves are idempotent, so one sent twice does no harm.
     const flush = () => {
       if (!signedIn || !dirty) return
-      dirty = false
-      sendServer(publicPath, [...pending, here])
-      pending = []
+      const sent = { here, pending }
+      void sendServer(publicPath, [...pending, here]).then((ok) => {
+        if (!ok) return
+        if (pending === sent.pending) pending = []
+        if (here === sent.here) dirty = false
+      })
     }
+    const hidden = () => document.visibilityState === 'hidden' && flush()
 
     const percent = () => {
       if (!body) return 100
@@ -146,15 +159,15 @@ export function useReadingPosition(publicPath: string, chapterSlug: string) {
         if (mine && mine.percent > (resume?.percent ?? -1)) resume = mine
         if (mine && mine.percent > here.percent) here = mine
         // the account keeps the furthest of each, so sending what this device has is the whole merge
-        pending = local.items.filter(
-          (p) =>
-            p.chapterSlug !== chapterSlug &&
-            p.percent > (server.items.find((s) => s.chapterSlug === p.chapterSlug)?.percent ?? -1),
+        pending = aheadOf(
+          local.items.filter((p) => p.chapterSlug !== chapterSlug),
+          server.items,
+          liveList,
+          MERGE_LIMIT,
         )
-        const known = allSlugs(local.items, server.items, [here])
         writeLocal(publicPath, {
           last: chapterSlug,
-          items: mergePositions(local.items, [...server.items, here], known),
+          items: mergePositions(local.items, [...server.items, here], liveList),
         })
         dirty = true
         flush()
@@ -171,14 +184,17 @@ export function useReadingPosition(publicPath: string, chapterSlug: string) {
 
     const timer = window.setInterval(flush, SERVER_EVERY_MS)
     window.addEventListener('pagehide', flush)
+    // a phone often never fires pagehide: the tab is hidden, then discarded
+    document.addEventListener('visibilitychange', hidden)
     return () => {
       alive = false
       flush() // leaving for another chapter in the app fires no pagehide
       window.clearInterval(timer)
       window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', hidden)
       window.removeEventListener('scroll', record)
       intents.forEach((t) => window.removeEventListener(t, moved))
       io.disconnect()
     }
-  }, [publicPath, chapterSlug])
+  }, [publicPath, chapterSlug, live])
 }

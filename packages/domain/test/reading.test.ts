@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { creditLine, mergePositions, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
+import { aheadOf, creditLine, mergePositions, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
 
 describe('sectionLabel', () => {
   it('names fiction chapters in words', () => {
@@ -102,5 +102,25 @@ describe('mergePositions', () => {
       { chapterSlug: 'two-bbbbbb', blockId: null, percent: 100 },
     ])
     expect(mergePositions('nonsense' as never, [], live)).toEqual([])
+  })
+})
+
+describe('aheadOf', () => {
+  const slugs = Array.from({ length: 60 }, (_, i) => `ch-${String(i).padStart(6, '0')}`)
+  it('sends only live chapters the account is behind on, furthest first, within one save', () => {
+    const local = [
+      ...slugs.map((chapterSlug, i) => ({ chapterSlug, blockId: null, percent: 40 + (i % 50) })),
+      { chapterSlug: 'gone-zzzzzz', blockId: 'z', percent: 100 },
+    ]
+    const server = [{ chapterSlug: slugs[59]!, blockId: 'x', percent: 100 }]
+    const out = aheadOf(local, server, slugs, 49)
+    expect(out).toHaveLength(49)
+    expect(out.some((p) => p.chapterSlug === 'gone-zzzzzz' || p.chapterSlug === slugs[59])).toBe(false)
+    expect(out.map((p) => p.percent)).toEqual([...out.map((p) => p.percent)].sort((a, b) => b - a))
+    expect(out[0]!.percent).toBe(89)
+  })
+  it('sends nothing once the account has caught up', () => {
+    const local = [{ chapterSlug: slugs[0]!, blockId: 'a', percent: 30 }]
+    expect(aheadOf(local, [{ chapterSlug: slugs[0]!, blockId: 'b', percent: 30 }], slugs, 49)).toEqual([])
   })
 })

@@ -82,6 +82,16 @@ describe('reading positions', () => {
     ])
   })
 
+  it('a tie without a paragraph keeps the stored one', async () => {
+    const s = await published()
+    const reader = await signUp(ctx.app, 'Reader')
+    await save(reader, s.path, [{ chapterSlug: s.slugs[0], blockId: 'p-5', percent: 40 }])
+    await save(reader, s.path, [{ chapterSlug: s.slugs[0], blockId: null, percent: 40 }])
+    expect((await load(reader, s.path)).items).toEqual([
+      { chapterSlug: s.slugs[0], blockId: 'p-5', percent: 40 },
+    ])
+  })
+
   it('each reader sees only their own', async () => {
     const s = await published()
     const a = await signUp(ctx.app, 'Reader A')

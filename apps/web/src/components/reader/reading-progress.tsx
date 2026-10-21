@@ -3,9 +3,18 @@ import { useEffect, useState } from 'react'
 import { loadReadingPositions, useReadingPosition } from './use-reading-position'
 
 /** A hairline that fills as the reader moves through the chapter; remembers the paragraph for "continue reading". */
-export function ReadingProgress({ publicPath, chapterSlug }: { publicPath: string; chapterSlug: string }) {
+export function ReadingProgress({
+  publicPath,
+  chapterSlug,
+  liveSlugs,
+}: {
+  publicPath: string
+  chapterSlug: string
+  /** every chapter readers can open, versions' included: saved places for anything else are stale */
+  liveSlugs: string[]
+}) {
   const [progress, setProgress] = useState(0)
-  useReadingPosition(publicPath, chapterSlug)
+  useReadingPosition(publicPath, chapterSlug, liveSlugs)
   useEffect(() => {
     const onScroll = () => {
       const max = document.documentElement.scrollHeight - window.innerHeight

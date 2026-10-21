@@ -58,7 +58,11 @@ export default async function ReadChapterPage({ params }: Params) {
       prevHref={chapter.prev ? routes.readChapter(work.publicPath, chapter.prev.slug) : null}
       nextHref={chapter.next ? routes.readChapter(work.publicPath, chapter.next.slug) : null}
     >
-      <ReadingProgress publicPath={work.publicPath} chapterSlug={chapter.slug} />
+      <ReadingProgress
+        publicPath={work.publicPath}
+        chapterSlug={chapter.slug}
+        liveSlugs={[...work.chapters, ...work.versions.flatMap((v) => v.chapters)].map((c) => c.slug)}
+      />
       <main id="main" className="manuscript mx-auto max-w-[calc(65ch+2rem)] px-4 pb-16">
         <ChapterOpener label={label} title={chapter.title} credit={chapter.credit} />
         {chapter.index === 0 && work.contentWarnings.length > 0 && (

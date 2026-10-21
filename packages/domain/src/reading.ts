@@ -106,3 +106,21 @@ export function mergePositions(local: Position[], server: Position[], liveSlugs:
       if (p && p.percent > (best.get(p.chapterSlug)?.percent ?? -1)) best.set(p.chapterSlug, p)
   return liveSlugs.flatMap((s) => best.get(s) ?? [])
 }
+
+/**
+ * The device's positions the account is behind on, to send on signing in: live chapters only (a stale one would be
+ * resent forever, since the server never stores it), furthest first, at most `limit` so the save stays within the
+ * API's cap. Whatever doesn't fit is still behind next visit and goes then.
+ */
+export function aheadOf(
+  local: Position[],
+  server: Position[],
+  liveSlugs: string[],
+  limit: number,
+): Position[] {
+  const theirs = new Map(mergePositions(server, [], liveSlugs).map((p) => [p.chapterSlug, p.percent]))
+  return mergePositions(local, [], liveSlugs)
+    .filter((p) => p.percent > (theirs.get(p.chapterSlug) ?? -1))
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, limit)
+}

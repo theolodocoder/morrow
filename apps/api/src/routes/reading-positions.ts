@@ -93,10 +93,11 @@ export const readingPositionRoutes: FastifyPluginAsyncZod<{ db: Database }> = as
           )
           .onConflictDoUpdate({
             target: [readingPositions.userId, readingPositions.workId, readingPositions.chapterId],
-            // furthest wins, so re-reading an early page never loses the place; the paragraph goes with the percent
+            // furthest wins, so re-reading an early page never loses the place; the paragraph goes with the percent, and a
+            // save that knows no paragraph never erases one
             set: {
               percent: sql`greatest(${readingPositions.percent}, excluded.percent)`,
-              blockId: sql`case when excluded.percent >= ${readingPositions.percent} then excluded.block_id else ${readingPositions.blockId} end`,
+              blockId: sql`case when excluded.percent >= ${readingPositions.percent} then coalesce(excluded.block_id, ${readingPositions.blockId}) else ${readingPositions.blockId} end`,
               updatedAt: sql`excluded.updated_at`,
             },
           })
