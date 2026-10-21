@@ -61,11 +61,12 @@ jobs:
              git fetch --prune origin '$REF'
              git checkout --force --detach FETCH_HEAD
              git log -1 --format='deploying %h %s'
-             # A fresh dump before migrations run; skipped until backups are configured (and on the very first deploy).
-             if grep -q '^BACKUP_TARGET=.' .env.production && [ -n \"\$(docker compose --env-file .env.production -f docker-compose.prod.yml ps -q --status running postgres)\" ]; then
-               deploy/backup.sh
+             # A fresh dump before migrations run. Skipped on the very first deploy (no database yet) and while the
+             # template's R2 placeholders are in place; once backups are configured, a failed dump stops the deploy.
+             if [ -n \"\$(docker compose --env-file .env.production -f docker-compose.prod.yml ps -q --status running postgres)\" ]; then
+               deploy/backup.sh --if-configured
              else
-               echo 'no pre-deploy dump: backups not configured or postgres not running yet'
+               echo 'no pre-deploy dump: postgres is not running yet'
              fi
              docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans --wait --wait-timeout 600
              docker image prune -f

@@ -6,9 +6,10 @@
 
 ```sh
 c() { docker compose --env-file .env.production -f docker-compose.prod.yml "$@"; }
-set -a; eval "$(grep -E '^(RCLONE_CONFIG_R2_[A-Z_]+|BACKUP_[A-Z_]+)=' .env.production)"; set +a
-rclone lsl "r2:$BACKUP_TARGET"                                     # pick a dump
-rclone copyto "r2:$BACKUP_TARGET/morrow-20261021T031700Z.dump.gz" /tmp/morrow.dump.gz
+r2() { deploy/backup.sh rclone "$@"; }        # rclone with the R2 settings from .env.production
+T=$(grep '^BACKUP_TARGET=' .env.production | cut -d= -f2-)   # e.g. morrow-backups/postgres
+r2 lsl "r2:$T"                                                # pick a dump
+r2 copyto "r2:$T/morrow-20261021T031700Z.dump.gz" /tmp/morrow.dump.gz
 ```
 
 ## Restore into production (after data loss)
