@@ -13,6 +13,7 @@ import { FeedbackDialog } from '@/components/feedback-dialog'
 import { Avatar } from '@/components/profile/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog } from '@/components/ui/dialog'
+import { toast } from '@/components/ui/toast'
 import {
   BadgeIcon,
   BellIcon,
@@ -85,8 +86,17 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
   const router = useRouter()
   const [feedback, setFeedback] = useState(false)
   const [unsent, setUnsent] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const signOut = async () => {
-    await api('/api/auth/sign-out', { method: 'POST', body: {} })
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await api('/api/auth/sign-out', { method: 'POST', body: {} })
+    } catch {
+      setSigningOut(false)
+      toast('Couldn’t sign out. Try again.') // still signed in: the device copies stay too
+      return
+    }
     await clearDeviceCopies(me.id)
     router.replace('/sign-in')
     router.refresh()
@@ -142,7 +152,7 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
               <FeedbackIcon size={16} /> Send feedback to Morrow
             </MenuItem>
             <Separator className="my-1 h-px bg-[var(--border-subtle)]" />
-            <MenuItem id="signout" className={item}>
+            <MenuItem id="signout" className={item} isDisabled={signingOut}>
               <SignOutIcon size={16} /> Sign out
             </MenuItem>
           </Menu>
@@ -151,11 +161,11 @@ export function AccountMenu({ me, compact }: { me: ShellUser; compact?: boolean 
       <FeedbackDialog isOpen={feedback} onOpenChange={setFeedback} />
       <Dialog title="Some writing hasn’t reached Morrow yet" isOpen={unsent} onOpenChange={setUnsent}>
         <p className="text-sm text-secondary">
-          It’s saved on this device only. Go back online and open Morrow so it can sync, or sign out and
-          delete it.
+          It’s saved on this device only. Go back online and open the chapter you were writing so it can sync,
+          or sign out and delete it.
         </p>
         <div className="mt-6 flex flex-wrap justify-end gap-2">
-          <Button variant="danger" onPress={() => void signOut()}>
+          <Button variant="danger" isDisabled={signingOut} onPress={() => void signOut()}>
             Sign out and delete it
           </Button>
           <Button variant="primary" autoFocus onPress={() => setUnsent(false)}>

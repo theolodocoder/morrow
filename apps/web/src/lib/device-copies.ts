@@ -6,7 +6,7 @@ const PREFIX = 'morrow:doc:'
 // Fallback for browsers without indexedDB.databases(): the stores this device created.
 const INDEX = 'morrow:doc-stores'
 // Documents whose device copy holds changes the server hasn't confirmed: sign-out must not delete them silently.
-const pendingKey = (userId: string) => `morrow:pending:${userId}`
+export const pendingKey = (userId: string) => `morrow:pending:${userId}`
 
 export const deviceCopyName = (userId: string, documentId: string) => `${PREFIX}${userId}:${documentId}`
 

@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { IndexeddbPersistence } from 'y-indexeddb'
+// `_db` and `fetchUpdates` are y-indexeddb internals: safe only because the version is pinned exactly (9.0.12).
+import { fetchUpdates, IndexeddbPersistence } from 'y-indexeddb'
 import { CollabEvent, type CollabTicket } from '@morrow/contracts'
 import { SCHEMA_VERSION } from '@morrow/editor'
 import { api, ClientApiError } from '@/lib/client-api'
@@ -11,6 +12,7 @@ import {
   deviceCopyName,
   deviceStorageWorks,
   isPendingWriting,
+  pendingKey,
   rememberDeviceCopy,
   setPendingWriting,
 } from '@/lib/device-copies'
@@ -87,35 +89,63 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       serverSynced = false,
       unsynced = 0,
       onDevice = false, // this document's IndexedDB store is open and takes every change
-      // the device copy holds changes the server hasn't confirmed (kept across tabs and visits, for sign-out)
-      pending = isPendingWriting(me.id, documentId)
+      // the device copy's words are in this doc, or there is no device copy: until then they may still be missing
+      deviceLoaded = false
     let savingTimer: ReturnType<typeof setTimeout> | undefined
     let live: HocuspocusProvider | null = null
     const settle = (s: CollabStatus) => {
-      if (!terminal) setStatus(degraded && (s === 'saved' || s === 'saving') ? 'degraded' : s)
+      if (!terminal && !cancelled) setStatus(degraded && (s === 'saved' || s === 'saving') ? 'degraded' : s)
     }
-    const markPending = (p: boolean) => {
-      if (p === pending) return
-      pending = p
-      setPendingWriting(me.id, documentId, p)
+    // "The device copy holds changes the server hasn't confirmed": shared by every tab through localStorage, so
+    // always read fresh. It is what keeps sign-out from deleting unsent words.
+    const pendingNow = () => isPendingWriting(me.id, documentId)
+    const markPending = () => {
+      if (!pendingNow()) setPendingWriting(me.id, documentId, true)
+    }
+    // The server has everything this tab sent, but y-indexeddb doesn't share between tabs: first take in what other
+    // tabs left in the device copy. Anything new is sent (and re-marks); clear only when nothing new arrived.
+    let checking = false
+    const confirmSaved = async () => {
+      const copy = local
+      if (checking || !copy) return
+      checking = true
+      try {
+        await fetchUpdates(copy)
+        if (copy === local && mode !== 'read' && serverSynced && unsynced === 0)
+          setPendingWriting(me.id, documentId, false)
+      } catch {
+        onDevice = false // the store closed under us: keep the mark, stop relying on the copy
+      } finally {
+        checking = false
+      }
+      refresh() // a new edit or ack meanwhile is looked at again here
     }
     // One place turns the facts into the label, so no single event can leave a stale one behind.
     const refresh = () => {
       clearTimeout(savingTimer)
-      // Only the server's confirmation after a sync clears it: every unsent change has been applied there.
-      if (mode !== 'read' && serverSynced && unsynced === 0) markPending(false)
+      const pending = pendingNow()
+      const confirmed = mode !== 'read' && serverSynced && unsynced === 0
+      // Clear the mark first; "Saved" follows (from the refresh it ends with), so "Saved" means nothing is pending.
+      if (confirmed && pending && onDevice && deviceLoaded) void confirmSaved()
       if (!navigator.onLine || !socketUp) {
         if (mode !== 'read' && (unsynced > 0 || pending) && onDevice) settle('on-device')
         else settle(navigator.onLine ? 'reconnecting' : 'offline')
       } else if (mode === 'read') {
         if (serverSynced) settle('read-only')
-      } else if (serverSynced && unsynced === 0) settle('saved')
-      // (Re)syncing words the server hasn't got yet: say so straight away, never "Saved" until it confirms.
-      else if (!serverSynced && pending) settle('saving')
+      } else if (confirmed && (!pending || (!onDevice && deviceLoaded))) settle('saved')
+      // Syncing words the server hasn't got yet (or that are still loading from the device): never "Saved" yet.
+      else if (pending && (!serverSynced || !deviceLoaded)) settle('saving')
       else if (unsynced > 0) savingTimer = setTimeout(() => settle('saving'), SAVING_DELAY_MS)
     }
     window.addEventListener('offline', refresh)
     window.addEventListener('online', refresh)
+    // Another tab changed the marks: if it cleared this document's while words here are still unsent, mark it again.
+    const onMarks = (e: StorageEvent) => {
+      if (e.key !== pendingKey(me.id)) return
+      if (unsynced > 0 && onDevice && mode !== 'read') markPending()
+      if (live) refresh()
+    }
+    window.addEventListener('storage', onMarks)
     // Without a device copy, unsent words live only in this tab: ask before it closes.
     const leaving = (e: BeforeUnloadEvent) => {
       if (!onDevice && unsynced > 0 && mode !== 'read') e.preventDefault()
@@ -140,6 +170,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         (db) => {
           if (local !== copy) return // dropped while opening (a view-only session, or unmounted): already closing
           onDevice = true
+          // Edits made before a slow copy opened are in it now (it stores the whole doc on open): mark them.
+          if (unsynced > 0 && mode !== 'read') markPending()
           // Another tab deleting the store (sign-out) closes it: stop writing to it instead of failing every edit.
           db.onversionchange = () => dropDeviceCopy(false)
         },
@@ -147,10 +179,15 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       )
       if (onDevice) await copy.whenSynced
     }
+    const deviceCopyLoaded = () => {
+      deviceLoaded = true
+      if (live) refresh()
+    }
     const dropDeviceCopy = (remove: boolean) => {
       const l = local
       local = null
       onDevice = false
+      deviceLoaded = true // nothing more will come from it
       void Promise.resolve(l?.destroy())
         .catch(() => {})
         .then(() => (remove ? deleteDeviceCopy(name) : undefined))
@@ -158,14 +195,12 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     // Your own edits mark the copy pending; the server's updates and the copy's own reload (before connecting) don't.
     const onUpdate = (_: Uint8Array, origin: unknown) => {
       if (origin === live || (origin === local && !live) || mode === 'read' || !onDevice) return
-      markPending(true)
+      markPending()
     }
     doc.on('update', onUpdate)
     // Load the device copy first, so unsent words are part of the first sync with the server.
-    const loaded = Promise.race([
-      openDeviceCopy(),
-      new Promise((resolve) => setTimeout(resolve, DEVICE_LOAD_MAX_MS)),
-    ])
+    const opening = openDeviceCopy().then(deviceCopyLoaded)
+    const loaded = Promise.race([opening, new Promise((resolve) => setTimeout(resolve, DEVICE_LOAD_MAX_MS))])
 
     void loaded.then(() => {
       if (cancelled) return
@@ -179,7 +214,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
             const t = await api<CollabTicket>('/collab/tickets', { method: 'POST', body: { documentId } })
             mode = t.mode
             // A viewer can't have unsent edits: keep nothing on the device (unless it still holds earlier ones).
-            if (mode === 'read') dropDeviceCopy(!pending)
+            if (mode === 'read') dropDeviceCopy(!pendingNow())
             return JSON.stringify({ ticket: t.ticket, schemaVersion: SCHEMA_VERSION })
           } catch (err) {
             // No ticket means no access any more (removed, or the work was deleted).
@@ -271,6 +306,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       clearTimeout(savingTimer)
       window.removeEventListener('offline', refresh)
       window.removeEventListener('online', refresh)
+      window.removeEventListener('storage', onMarks)
       window.removeEventListener('beforeunload', leaving)
       live?.destroy()
       doc.off('update', onUpdate)

@@ -58,6 +58,35 @@ const deviceCopies = (p: Page) =>
     (await indexedDB.databases()).map((d) => d.name ?? '').filter((n) => n.startsWith('morrow:doc:')),
   )
 
+/**
+ * Chromium's offline emulation leaks: an open WebSocket still delivers frames later. Returns a switch that makes this
+ * page's frames never reach the server, like a real dropped connection. Call before the page opens the editor.
+ */
+async function cutOffServer(p: Page) {
+  let cut = false
+  await p.routeWebSocket(/:4001/, (ws) => {
+    const server = ws.connectToServer()
+    ws.onMessage((m) => {
+      if (!cut) server.send(m)
+    })
+  })
+  return () => {
+    cut = true
+  }
+}
+
+async function signOutFrom(p: Page) {
+  await p.getByRole('button', { name: 'Your account' }).click()
+  await p.getByRole('menuitem', { name: 'Sign out' }).click()
+}
+const unsentDialog = (p: Page) => p.getByRole('dialog', { name: 'Some writing hasn’t reached Morrow yet' })
+const pendingMarks = (p: Page) =>
+  p.evaluate(() =>
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('morrow:pending:'))
+      .map((k) => localStorage.getItem(k)),
+  )
+
 /** Paragraph text without remote caret labels. */
 const paragraphs = (p: Page) =>
   editor(p).evaluate((root) =>
@@ -79,9 +108,11 @@ test('edits made offline survive closing the tab and sync when back online', asy
   const email = `ama-${crypto.randomUUID()}@example.test`
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
+  const cut = await cutOffServer(page)
   const url = await ownerWithChapter(page, email, 'The salt had come up through the roots again.')
 
   await ctx.setOffline(true)
+  cut()
   await typeNewParagraph(page, 'Written on the train with no signal.')
   await status(page, 'Saved on this device')
   // Close the whole browser, not just the tab: Chromium would otherwise still deliver the closed tab's unsent
@@ -230,15 +261,14 @@ test('signing out never silently deletes writing the server hasn’t got', async
   await p.goto('/app/library')
   const before = await deviceCopies(p)
   expect(before.length).toBeGreaterThan(0)
-  const signOut = async () => {
-    await p.getByRole('button', { name: 'Your account' }).click()
-    await p.getByRole('menuitem', { name: 'Sign out' }).click()
-  }
-  const dialog = p.getByRole('dialog', { name: 'Some writing hasn’t reached Morrow yet' })
+  const signOut = () => signOutFrom(p)
+  const dialog = unsentDialog(p)
 
   await signOut()
   await expect(dialog).toBeVisible()
-  await expect(dialog).toContainText('It’s saved on this device only.')
+  await expect(dialog).toContainText(
+    'It’s saved on this device only. Go back online and open the chapter you were writing so it can sync, or sign out and delete it.',
+  )
   await dialog.getByRole('button', { name: 'Stay signed in' }).click()
   await expect(dialog).toHaveCount(0)
   await expect(p).toHaveURL(/\/app\/library$/)
@@ -307,4 +337,130 @@ test('a view-only session keeps no copy on the device', async ({ browser }) => {
   await expect.poll(() => deviceCopies(b)).toEqual([])
   await aCtx.close()
   await bCtx.close()
+})
+
+test('words another tab left on the device keep sign-out asking until the server has them', async ({
+  browser,
+}) => {
+  const email = `ama-${crypto.randomUUID()}@example.test`
+  const ctx = await browser.newContext()
+  const a = await ctx.newPage()
+  const cutA = await cutOffServer(a)
+  const url = await ownerWithChapter(a, email, 'Base.')
+  // Tab B: while held, nothing it sends reaches the server, so the server can't confirm A's words through it yet.
+  const b = await ctx.newPage()
+  let holdB = false
+  let releaseB = () => {}
+  await b.routeWebSocket(/:4001/, (ws) => {
+    const server = ws.connectToServer()
+    const held: (string | Buffer)[] = []
+    ws.onMessage((m) => {
+      if (holdB) held.push(m)
+      else server.send(m)
+    })
+    releaseB = () => {
+      holdB = false
+      held.splice(0).forEach((m) => server.send(m))
+    }
+  })
+  await b.goto(url)
+  await status(b, 'Saved')
+
+  await ctx.setOffline(true)
+  cutA()
+  holdB = true
+  await typeNewParagraph(a, 'From tab A, written offline.')
+  await status(a, 'Saved on this device')
+  // Let the device copy commit the last keystrokes: a tab killed mid-write loses those too (IndexedDB aborts them).
+  await a.waitForTimeout(1_000)
+  await a.close()
+  await ctx.setOffline(false)
+
+  // A's words are only in the device copy, and B (still open) hasn't got them to the server: sign-out still asks.
+  const c = await ctx.newPage()
+  await c.goto('/app/library')
+  await signOutFrom(c)
+  await expect(unsentDialog(c)).toBeVisible()
+  await unsentDialog(c).getByRole('button', { name: 'Stay signed in' }).click()
+
+  // Once B can reach the server it takes A's words from the device copy and sends them.
+  releaseB()
+  await expect(editor(b)).toContainText('From tab A, written offline.')
+  await status(b, 'Saved')
+  const [otherCtx, other] = await signIn(browser, email)
+  await other.goto(url)
+  await expect(editor(other)).toContainText('From tab A, written offline.')
+  await otherCtx.close()
+  await expect.poll(() => pendingMarks(c)).toEqual([])
+  await signOutFrom(c)
+  await expect(c).toHaveURL(/\/sign-in$/)
+  await ctx.close()
+})
+
+test('a slow device copy: no "Saved" and no cleared mark before its words are back', async ({ browser }) => {
+  const ctx = await browser.newContext()
+  const page = await ctx.newPage()
+  const cut = await cutOffServer(page)
+  const url = await ownerWithChapter(page, `ama-${crypto.randomUUID()}@example.test`, 'Quick start.')
+  await ctx.setOffline(true)
+  cut()
+  await typeNewParagraph(page, 'Kept while the disk was slow.')
+  await status(page, 'Saved on this device')
+  const device = await ctx.storageState({ indexedDB: true })
+  await ctx.close()
+
+  const ctx2 = await browser.newContext({ storageState: device })
+  // Opening a document's store takes 3 s: longer than the editor waits for it before connecting.
+  await ctx2.addInitScript(() => {
+    const open = IDBFactory.prototype.open
+    IDBFactory.prototype.open = function (name: string, version?: number) {
+      if (!name.startsWith('morrow:doc:')) return open.call(this, name, version)
+      const fake: Partial<IDBOpenDBRequest> = {}
+      setTimeout(() => {
+        const req = open.call(indexedDB, name, version)
+        req.onupgradeneeded = (e) => fake.onupgradeneeded?.call(req, e)
+        req.onsuccess = (e) => fake.onsuccess?.call(req, e)
+        req.onerror = (e) => fake.onerror?.call(req, e)
+      }, 3_000)
+      return fake as IDBOpenDBRequest
+    }
+  })
+  const p = await ctx2.newPage()
+  // Each time anything changes: the label, whether the device's words are in the editor, and whether it's marked.
+  await p.addInitScript(() => {
+    const log: { label: string; words: boolean; marked: boolean }[] = ((
+      window as unknown as { __log: typeof log }
+    ).__log = [])
+    new MutationObserver(() => {
+      const label = document.querySelector('[role=status] span:last-child')?.textContent ?? ''
+      const words = document.body?.innerText.includes('Kept while the disk was slow.') ?? false
+      const marked = Object.keys(localStorage).some(
+        (k) => k.startsWith('morrow:pending:') && localStorage.getItem(k),
+      )
+      log.push({ label, words, marked })
+    }).observe(document, { subtree: true, childList: true, characterData: true })
+  })
+  await p.goto(url)
+  await expect(editor(p)).toContainText('Kept while the disk was slow.')
+  await status(p, 'Saved')
+  const log = await p.evaluate(
+    () => (window as unknown as { __log: { label: string; words: boolean; marked: boolean }[] }).__log,
+  )
+  expect(log.filter((e) => !e.words && e.label === 'Saved')).toEqual([])
+  expect(log.filter((e) => !e.words && !e.marked)).toEqual([])
+  await ctx2.close()
+})
+
+test('a failed sign-out keeps you signed in and keeps the device copies', async ({ browser }) => {
+  const ctx = await browser.newContext()
+  const p = await ctx.newPage()
+  await ownerWithChapter(p, `ama-${crypto.randomUUID()}@example.test`, 'Still here.')
+  await p.goto('/app/library')
+  const before = await deviceCopies(p)
+  await p.route('**/api/auth/sign-out', (r) => r.fulfill({ status: 500, body: '{}' }))
+  await signOutFrom(p)
+  await expect(p.getByText('Couldn’t sign out. Try again.')).toBeVisible()
+  await expect(p).toHaveURL(/\/app\/library$/)
+  expect(await deviceCopies(p)).toEqual(before)
+  await ctx.close()
 })
