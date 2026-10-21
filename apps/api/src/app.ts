@@ -102,11 +102,24 @@ export async function buildApp({ env, db, collab, email, logger }: AppDeps) {
       .map((x) => x.trim())
       .filter(Boolean),
     bodyLimit: 256 * 1024,
-    logger: logger ?? {
-      level: env.NODE_ENV === 'production' ? 'info' : 'warn',
-      // Never log credentials or content (engineering standards §3.7).
-      redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
-    },
+    logger:
+      logger === false
+        ? false
+        : {
+            level: env.NODE_ENV === 'production' ? 'info' : 'warn',
+            // Never log credentials or content (engineering standards §3.7).
+            redact: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+            serializers: {
+              // The route pattern, never the raw URL: paths and queries carry invitation, verification and
+              // password-reset tokens (/invitations/:token, /api/auth/*), and logs are kept.
+              req: (req: FastifyRequest) => ({
+                method: req.method,
+                route: req.routeOptions?.url ?? '(no route)',
+                remoteAddress: req.ip,
+              }),
+            },
+            ...(typeof logger === 'object' ? logger : {}),
+          },
   }).withTypeProvider<ZodTypeProvider>()
 
   app.setValidatorCompiler(validatorCompiler)
