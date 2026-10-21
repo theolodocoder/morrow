@@ -94,3 +94,64 @@ test('M2: invite, co-write live, downgrade to read-only, remove', async ({ brows
   await ownerCtx.close()
   await guestCtx.close()
 })
+
+/** Is `s` spelled out, in order, within `text`? Concurrent typing may interleave two writers, never reorder one. */
+const inOrder = (text: string, s: string) => {
+  let i = 0
+  for (const c of text) if (c === s[i]) i++
+  return i === s.length
+}
+
+test('M2: two writers typing at the same spot keep their own words in order', async ({ browser }) => {
+  const ownerCtx = await browser.newContext()
+  const owner = await ownerCtx.newPage()
+  const guestCtx = await browser.newContext()
+  const guest = await guestCtx.newPage()
+  const guestEmail = `tolu-${crypto.randomUUID()}@example.test`
+
+  await owner.goto('/sign-up')
+  await signUpOn(owner, 'Ama Owusu', `ama-${crypto.randomUUID()}@example.test`)
+  await owner.getByRole('button', { name: 'Skip for now' }).click()
+  await owner.getByRole('button', { name: 'New work' }).first().click()
+  await owner.getByLabel('Title').fill('Same Spot')
+  await owner.getByRole('button', { name: 'Create' }).click()
+  await status(owner, 'Saved')
+  await editor(owner).click()
+  await owner.keyboard.type('Base.')
+  await status(owner, 'Saved')
+  await owner.getByRole('button', { name: 'Share' }).click()
+  await owner.getByLabel('Invite by email').fill(guestEmail)
+  await owner.getByRole('button', { name: 'Create invitation' }).click()
+  const link = await owner.getByLabel('Invitation link').inputValue()
+  await owner.getByRole('button', { name: 'Done' }).click()
+  await guest.goto(link)
+  await guest.getByRole('link', { name: 'Create an account to accept' }).click()
+  await signUpOn(guest, 'Tolu Ade', guestEmail)
+  await guest.getByRole('button', { name: 'Accept invitation' }).click()
+  await status(guest, 'Saved')
+  await expect(owner.getByRole('group', { name: /Also here: Tolu Ade/ })).toBeVisible()
+
+  // Both carets at the end of the same paragraph, then both type at once. Every remote keystroke lands right at
+  // the other writer's caret, which is where the caret used to be pulled back a character (text came out reversed).
+  for (const p of [owner, guest]) {
+    await editor(p).click()
+    await p.keyboard.press('End')
+  }
+  const ama = ' Ama typed this whole sentence slowly.'
+  const tolu = ' Tolu typed this whole sentence slowly.'
+  await Promise.all([owner.keyboard.type(ama, { delay: 40 }), guest.keyboard.type(tolu, { delay: 40 })])
+
+  const text = (p: Page) =>
+    editor(p).evaluate((root) => {
+      const copy = root.cloneNode(true) as HTMLElement
+      copy.querySelectorAll('.collaboration-carets__caret').forEach((c) => c.remove())
+      return copy.textContent ?? ''
+    })
+  await expect.poll(async () => (await text(owner)) === (await text(guest))).toBe(true)
+  const merged = await text(owner)
+  expect(inOrder(merged, ama), merged).toBe(true)
+  expect(inOrder(merged, tolu), merged).toBe(true)
+
+  await ownerCtx.close()
+  await guestCtx.close()
+})
