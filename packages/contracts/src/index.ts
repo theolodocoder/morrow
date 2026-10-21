@@ -1485,6 +1485,8 @@ export const Dashboard = z.object({
       person: PublicPerson,
       work: z.object({ title: z.string(), publicPath: z.string() }).nullable(),
       excerpt: z.string().nullable(),
+      /** a comment on a chapter: that chapter, whose discussion holds it */
+      chapterSlug: z.string().nullable(),
       /** a follow you could return */
       followingBack: z.boolean().nullable(),
     }),

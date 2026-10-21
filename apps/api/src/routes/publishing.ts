@@ -33,7 +33,7 @@ import { slugify } from '../slug.ts'
 const WorkParams = z.object({ workId: z.uuid() })
 const publicPathOf = (w: { slug: string; publicId: string }) => `${w.slug}-${w.publicId}`
 /** stable chapter slug: title words plus a short id suffix, so renames before republishing never break links */
-const chapterSlug = (title: string, chapterId: string) => `${slugify(title)}-${chapterId.slice(-6)}`
+export const chapterSlug = (title: string, chapterId: string) => `${slugify(title)}-${chapterId.slice(-6)}`
 
 /** The version readers get: the branch marked "selected" if any, otherwise the main branch (FR-018). */
 async function publishedBranch(db: Database, workId: string) {

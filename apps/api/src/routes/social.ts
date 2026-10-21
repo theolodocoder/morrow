@@ -355,19 +355,23 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
       const after = decode<{ t: string; id: string }>(req.query.cursor)
       const chapterId = req.query.chapter ? await publishedChapterId(db, w.id, req.query.chapter) : null
       if ((req.query.chapter || req.query.block) && !chapterId) throw notFound()
+      // Replies inherit their parent's chapter and block, so one scope covers a thread and its count.
+      const scope = and(
+        eq(readerComments.workId, w.id),
+        chapterId
+          ? and(
+              eq(readerComments.chapterId, chapterId),
+              req.query.block ? eq(readerComments.blockId, req.query.block) : undefined,
+            )
+          : isNull(readerComments.chapterId),
+      )
       const tops = await db
         .select()
         .from(readerComments)
         .where(
           and(
-            eq(readerComments.workId, w.id),
+            scope,
             isNull(readerComments.parentId),
-            chapterId
-              ? and(
-                  eq(readerComments.chapterId, chapterId),
-                  req.query.block ? eq(readerComments.blockId, req.query.block) : undefined,
-                )
-              : isNull(readerComments.chapterId),
             after
               ? sql`(${readerComments.createdAt}, ${readerComments.id}) < (${after.t}::timestamptz, ${after.id}::uuid)`
               : undefined,
@@ -428,10 +432,15 @@ export const publicSocialRoutes: FastifyPluginAsyncZod<{
         if (c.deletedAt && !mine.length) continue
         items.push({ ...view(c), quote: quoteOf(doc, c.blockId), replies: mine })
       }
+      // Counted like works.readerCommentCount (replies too, removed ones not), but for this thread alone.
+      const [count] = await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(readerComments)
+        .where(and(scope, isNull(readerComments.deletedAt)))
       const last = page.at(-1)
       return {
         items,
-        total: w.readerCommentCount,
+        total: count!.n,
         nextCursor:
           tops.length > per && last ? encode({ t: last.createdAt.toISOString(), id: last.id }) : null,
         canComment: !!me && req.user!.restriction === null && !(await blockedBetween(db, me, w.ownerId)),

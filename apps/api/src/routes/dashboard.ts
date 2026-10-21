@@ -14,6 +14,7 @@ import {
   follows,
   profileViews,
   profiles,
+  publications,
   readerComments,
   userAchievements,
   workLikes,
@@ -23,6 +24,7 @@ import {
 } from '@morrow/db'
 import { avatarOf, peopleByIds } from '../people.ts'
 import { blockedSet } from '../safety.ts'
+import { chapterSlug } from './publishing.ts'
 
 interface DayRow {
   day: string
@@ -107,18 +109,21 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Database }> = async (a
       // Recent activity from people, newest first (blocked people are left out).
       const events = (
         await db.execute(sql`
-          (select 'like' as kind, l.user_id as actor, l.created_at as at, w.title, w.slug, w.public_id, null as body
+          (select 'like' as kind, l.user_id as actor, l.created_at as at, w.title, w.slug, w.public_id, null as body,
+                  null::uuid as chapter_id, null as chapter_title
              from ${workLikes} l join ${works} w on w.id = l.work_id
              where w.owner_id = ${me} and w.deleted_at is null and l.user_id <> ${me})
           union all
-          (select 'comment', c.author_id, c.created_at, w.title, w.slug, w.public_id, c.body
+          (select 'comment', c.author_id, c.created_at, w.title, w.slug, w.public_id, c.body, c.chapter_id,
+                  (select p.title from ${publications} p
+                     where p.chapter_id = c.chapter_id and p.superseded_at is null limit 1)
              from ${readerComments} c join ${works} w on w.id = c.work_id
              where w.owner_id = ${me} and w.deleted_at is null and c.author_id <> ${me} and c.deleted_at is null)
           union all
-          (select 'follow', f.follower_id, f.created_at, null, null, null, null
+          (select 'follow', f.follower_id, f.created_at, null, null, null, null, null, null
              from ${follows} f where f.target_type = 'author' and f.target_id = ${me})
           union all
-          (select 'work_follow', f.follower_id, f.created_at, w.title, w.slug, w.public_id, null
+          (select 'work_follow', f.follower_id, f.created_at, w.title, w.slug, w.public_id, null, null, null
              from ${follows} f join ${works} w on f.target_type = 'work' and f.target_id = w.id::text
              where w.owner_id = ${me} and w.deleted_at is null and f.follower_id <> ${me})
           order by at desc limit 40`)
@@ -130,6 +135,8 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Database }> = async (a
         slug: string | null
         public_id: string | null
         body: string | null
+        chapter_id: string | null
+        chapter_title: string | null
       }[]
       const blocked = await blockedSet(db, me)
       const visible = events.filter((e) => !blocked.has(e.actor))
@@ -210,6 +217,9 @@ export const dashboardRoutes: FastifyPluginAsyncZod<{ db: Database }> = async (a
               person,
               work: e.title ? { title: e.title, publicPath: `${e.slug}-${e.public_id}` } : null,
               excerpt: e.body ? clip(e.body) : null,
+              // a chapter comment is answered in that chapter's discussion, while the chapter is still published
+              chapterSlug:
+                e.chapter_id && e.chapter_title ? chapterSlug(e.chapter_title, e.chapter_id) : null,
               followingBack: e.kind === 'follow' || e.kind === 'work_follow' ? back.has(e.actor) : null,
             },
           ]

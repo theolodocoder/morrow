@@ -17,6 +17,7 @@ import {
   notifications,
   proposalEvents,
   proposals,
+  publications,
   readerComments,
   toAccessContext,
   user,
@@ -27,6 +28,7 @@ import {
 } from '@morrow/db'
 import type { EmailSender } from './email.ts'
 import { followersOfPublication } from './routes/follows.ts'
+import { chapterSlug } from './routes/publishing.ts'
 import { blockedSet } from './safety.ts'
 import { evaluateBadges } from './badges.ts'
 
@@ -250,7 +252,17 @@ async function plan(db: Database, e: Event): Promise<Draft[]> {
           .where(eq(works.id, e.workId))
       : []
     if (!c || c.deletedAt || !w) return []
-    const url = `/works/${w.slug}-${w.publicId}#comments`
+    // A chapter's comments live in its discussion at the chapter's end; the rest in the work page's thread.
+    const [chapter] = c.chapterId
+      ? await db
+          .select({ title: publications.title })
+          .from(publications)
+          .where(and(eq(publications.chapterId, c.chapterId), isNull(publications.supersededAt)))
+          .limit(1)
+      : []
+    const url = chapter
+      ? `/works/${w.slug}-${w.publicId}/read/${chapterSlug(chapter.title, c.chapterId!)}#discussion`
+      : `/works/${w.slug}-${w.publicId}#comments`
     const out: Draft[] = [
       {
         userId: w.ownerId,

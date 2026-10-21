@@ -29,7 +29,8 @@ type Dash = {
   activity: {
     kind: string
     person: { displayName: string }
-    work: { title: string } | null
+    work: { title: string; publicPath: string } | null
+    chapterSlug: string | null
     followingBack: boolean | null
   }[]
 }
@@ -118,6 +119,24 @@ describe('the writer’s dashboard', () => {
     expect(kinds.some((k) => k.includes('Pest'))).toBe(false)
     expect(kinds.some((k) => k.includes('Ama'))).toBe(false)
     expect(d.activity.find((a) => a.kind === 'follow')?.followingBack).toBe(false)
+    expect(d.activity.find((a) => a.kind === 'comment')?.chapterSlug).toBeNull()
+  })
+
+  it('a comment on a chapter links to that chapter’s discussion', async () => {
+    const ama = await person('Ama Chapters')
+    const bo = await person('Bo Chapters')
+    const w = await publish(ama, 'The Chaptered Essay')
+    const slug = (
+      (await ctx.app.inject({ method: 'GET', url: `/api/v1/public/works/${w.publicPath}` })).json() as {
+        chapters: { slug: string }[]
+      }
+    ).chapters[0]!.slug
+    await bo.call('POST', `/api/v1/reading/${w.publicPath}/comments`, { body: 'Ch.', chapterSlug: slug })
+    const d = (await ama.call('GET', '/api/v1/me/dashboard?days=7')).json() as Dash
+    expect(d.activity.find((a) => a.kind === 'comment')).toMatchObject({
+      work: { publicPath: w.publicPath },
+      chapterSlug: slug,
+    })
   })
 
   it('only 7, 30 or 90 days; signed in only', async () => {

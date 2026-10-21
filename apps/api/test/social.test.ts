@@ -417,8 +417,31 @@ describe('chapter discussion', () => {
     const post = (body: Record<string, unknown>) =>
       bo.call('POST', `/api/v1/reading/${w.publicPath}/comments`, body)
     const list = async (q: string) => (await pub(`/reading/${w.publicPath}/comments${q}`)).json() as Comments
-    return { w, slug, post, list }
+    return { w, slug, post, list, ama, bo }
   }
+
+  it('each thread counts its own comments; the writer is pointed at where the comment lives', async () => {
+    const { w, slug, post, list, ama, bo } = await discussed()
+    await post({ body: 'Whole work.' })
+    const top = ((await post({ body: 'Chapter talk.', chapterSlug: slug })).json() as { id: string }).id
+    await post({ body: 'On a line.', chapterSlug: slug, blockId: 'b1' })
+    await post({ body: 'And a reply.', parentId: top })
+    // the chapter's count takes in its paragraph comments and replies; the work page's only its own thread
+    expect((await list(`?chapter=${slug}`)).total).toBe(3)
+    expect((await list(`?chapter=${slug}&block=b1`)).total).toBe(1)
+    expect((await list('')).total).toBe(1)
+    await bo.call('DELETE', `/api/v1/reader-comments/${top}`)
+    expect((await list(`?chapter=${slug}`)).total).toBe(2)
+    expect((await ctx.db.db.select().from(works).where(eq(works.id, w.id)))[0]!.readerCommentCount).toBe(3)
+
+    await processOutbox(ctx.db.db)
+    const inbox = (await ama.call('GET', '/api/v1/me/notifications')).json() as {
+      items: { body: string; url: string }[]
+    }
+    const urlOf = (body: string) => inbox.items.find((n) => n.body === body)?.url
+    expect(urlOf('Whole work.')).toBe(`/works/${w.publicPath}#comments`)
+    expect(urlOf('On a line.')).toBe(`/works/${w.publicPath}/read/${slug}#discussion`)
+  })
 
   it('a chapter comment shows in its chapter, not on the work page', async () => {
     const { w, slug, post, list } = await discussed()
