@@ -13,9 +13,12 @@ import { api, ClientApiError } from '@/lib/client-api'
 export function FollowControls({
   author,
   work,
+  bookmark = true,
 }: {
   author?: { username: string; name: string }
   work?: { publicPath: string }
+  /** off where a Save control is already in sight (the reader's chapter end) */
+  bookmark?: boolean
 }) {
   const router = useRouter()
   const path = usePathname()
@@ -92,16 +95,18 @@ export function FollowControls({
             {s.followingWork ? <CheckIcon size={16} /> : <PlusIcon size={16} />}
             {s.followingWork ? 'Following this work' : 'Follow this work'}
           </Button>
-          <Button
-            size="sm"
-            variant="quiet"
-            aria-pressed={s.bookmarked}
-            isDisabled={waiting}
-            onPress={() => void toggle('bookmark')}
-          >
-            <BookmarkIcon size={16} className={s.bookmarked ? 'fill-current' : ''} />
-            {s.bookmarked ? 'Bookmarked' : 'Bookmark'}
-          </Button>
+          {bookmark && (
+            <Button
+              size="sm"
+              variant="quiet"
+              aria-pressed={s.bookmarked}
+              isDisabled={waiting}
+              onPress={() => void toggle('bookmark')}
+            >
+              <BookmarkIcon size={16} className={s.bookmarked ? 'fill-current' : ''} />
+              {s.bookmarked ? 'Bookmarked' : 'Bookmark'}
+            </Button>
+          )}
         </>
       )}
     </div>

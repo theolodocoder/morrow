@@ -32,7 +32,8 @@ export function WorkActions({
   publicPath: string
   title: string
   likes: number
-  comments: number
+  /** omitted where no matching count exists (a chapter's discussion): the link then reads "Comments" */
+  comments?: number
   author?: { username: string; name: string }
 }) {
   const router = useRouter()
@@ -131,10 +132,12 @@ export function WorkActions({
       <a
         href={commentsHref}
         className={icon}
-        aria-label={`${comments} ${comments === 1 ? 'comment' : 'comments'}`}
+        aria-label={
+          comments === undefined ? undefined : `${comments} ${comments === 1 ? 'comment' : 'comments'}`
+        }
       >
         <CommentIcon size={20} />
-        {compact(comments)}
+        {comments === undefined ? 'Comments' : compact(comments)}
       </a>
       <button
         type="button"

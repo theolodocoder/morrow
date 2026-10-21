@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import type { PublicChapter, PublicWork } from '@morrow/contracts'
 import { sectionLabel } from '@morrow/domain'
 import { RichText } from '@/components/reader/rich-text'
@@ -9,10 +8,10 @@ import { SuggestButton } from '@/components/proposals/suggest-button'
 import { ParagraphComments } from '@/components/reader/paragraph-comments'
 import { PollCard } from '@/components/reader/poll-card'
 import { publicApi, publicApiAsViewer } from '@/lib/public-api'
-import { WorkActions } from '@/components/public/work-actions'
 import { ViewPing } from '@/components/reader/view-ping'
 import { routes } from '@/lib/routes'
 import { ReaderFrame } from '@/components/reader/reader-frame'
+import { ChapterEnd } from '@/components/reader/chapter-end'
 
 type Params = { params: Promise<{ workSlug: string; chapterSlug: string }> }
 
@@ -38,6 +37,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ReadChapterPage({ params }: Params) {
   const { work, chapter } = await load(params)
+  const label = sectionLabel(work.category, chapter.index, work.chapters.length)
   return (
     <ReaderFrame
       publicPath={work.publicPath}
@@ -50,11 +50,7 @@ export default async function ReadChapterPage({ params }: Params) {
     >
       <ReadingProgress publicPath={work.publicPath} chapterSlug={chapter.slug} />
       <main id="main" className="manuscript mx-auto max-w-[calc(65ch+2rem)] px-4 pb-16">
-        <ChapterOpener
-          label={sectionLabel(work.category, chapter.index, work.chapters.length)}
-          title={chapter.title}
-          credit={chapter.credit}
-        />
+        <ChapterOpener label={label} title={chapter.title} credit={chapter.credit} />
         {chapter.index === 0 && work.contentWarnings.length > 0 && (
           <p className="mb-10 rounded-sm border border-subtle bg-app px-3 py-2 font-ui text-[13px] text-secondary">
             <span className="font-medium text-primary">Content notes:</span> {work.contentWarnings.join(', ')}
@@ -65,19 +61,8 @@ export default async function ReadChapterPage({ params }: Params) {
         </article>
         <ViewPing publicPath={work.publicPath} />
         <ParagraphComments publicPath={work.publicPath} chapterSlug={chapter.slug} />
-        <p aria-hidden="true" className="mt-16 text-center text-ornament">
-          ⁂
-        </p>
+        <ChapterEnd work={work} chapter={chapter} label={label} />
         <PollCard publicPath={work.publicPath} chapterSlug={chapter.slug} />
-        <div className="mt-10 flex justify-center font-ui">
-          <WorkActions
-            publicPath={work.publicPath}
-            title={work.title}
-            likes={work.likes}
-            comments={work.comments}
-            commentsHref={`${routes.publicWork(work.publicPath)}#comments`}
-          />
-        </div>
         {work.openToSuggestions && (
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3 font-ui">
             <p className="text-[13px] text-secondary">{work.author.displayName} welcomes suggestions.</p>
@@ -88,37 +73,6 @@ export default async function ReadChapterPage({ params }: Params) {
             />
           </div>
         )}
-        <nav aria-label="Chapters" className="mt-10 grid grid-cols-2 gap-4 font-ui text-sm">
-          <div>
-            {chapter.prev && (
-              <Link
-                rel="prev"
-                href={routes.readChapter(work.publicPath, chapter.prev.slug)}
-                className="block rounded-sm p-2 hover:bg-hover"
-              >
-                <span className="block text-[12px] text-tertiary">Previous</span>
-                <span className="text-primary">{chapter.prev.title}</span>
-              </Link>
-            )}
-          </div>
-          <div className="text-right">
-            {chapter.next ? (
-              <Link
-                rel="next"
-                href={routes.readChapter(work.publicPath, chapter.next.slug)}
-                className="block rounded-sm p-2 hover:bg-hover"
-              >
-                <span className="block text-[12px] text-tertiary">Next</span>
-                <span className="text-primary">{chapter.next.title}</span>
-              </Link>
-            ) : (
-              <Link href={routes.publicWork(work.publicPath)} className="block rounded-sm p-2 hover:bg-hover">
-                <span className="block text-[12px] text-tertiary">The end, for now</span>
-                <span className="text-primary">Back to contents</span>
-              </Link>
-            )}
-          </div>
-        </nav>
       </main>
     </ReaderFrame>
   )
