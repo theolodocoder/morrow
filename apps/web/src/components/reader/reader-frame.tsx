@@ -1,6 +1,8 @@
 'use client'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { minutesLeft } from '@morrow/domain'
 import { Button as AriaButton, Dialog, DialogTrigger, Popover } from 'react-aria-components'
 import { Sheet } from '@/components/ui/sheet'
 import { ArrowLeftIcon, ChaptersIcon } from '@/components/ui/icons'
@@ -9,13 +11,32 @@ import { routes } from '@/lib/routes'
 type Size = 's' | 'm' | 'l' | 'xl'
 type Tone = 'paper' | 'sepia' | 'night'
 type Face = 'serif' | 'sans'
-interface Prefs {
+type Leading = 'normal' | 'roomy'
+export interface Prefs {
   size: Size
   tone: Tone
   face: Face
+  leading: Leading
+  /** Whether paragraph comment markers show in the margin; off by default so the page stays quiet. */
+  marginComments: boolean
 }
 const KEY = 'morrow:reader'
-const DEFAULTS: Prefs = { size: 'm', tone: 'paper', face: 'serif' }
+const DEFAULTS: Prefs = { size: 'm', tone: 'paper', face: 'serif', leading: 'normal', marginComments: false }
+
+const PrefsContext = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => void }>({
+  prefs: DEFAULTS,
+  set: () => {},
+})
+/** The reader's saved preferences, for anything rendered inside the frame (paragraph markers, last-read storage). */
+export const useReaderPrefs = () => useContext(PrefsContext)
+
+/** True while typing or choosing in a control, where arrow keys belong to that control, not to chapter paging. */
+function inField(el: EventTarget | null) {
+  return (
+    el instanceof Element &&
+    !!el.closest('input, textarea, select, [contenteditable]:not([contenteditable=false]), [role=dialog]')
+  )
+}
 
 function load(): Prefs {
   try {
@@ -38,17 +59,25 @@ export function ReaderFrame({
   workTitle,
   chapterIndex,
   chapters,
+  wordCount,
+  prevHref,
+  nextHref,
   children,
 }: {
   publicPath: string
   workTitle: string
   chapterIndex: number
   chapters: { title: string; slug: string }[]
+  wordCount: number
+  prevHref: string | null
+  nextHref: string | null
   children: React.ReactNode
 }) {
   const [prefs, setPrefs] = useState<Prefs>(DEFAULTS)
   const [contents, setContents] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const [left, setLeft] = useState<number | null>(null)
+  const router = useRouter()
   useEffect(() => setPrefs(load()), [])
   const set = (p: Partial<Prefs>) => {
     const next = { ...prefs, ...p }
@@ -66,10 +95,32 @@ export function ReaderFrame({
       const y = window.scrollY
       setHidden(y > last && y > 120)
       last = y
+      // Progress through the chapter text itself (not the page): 0 when its top reaches the foot of the screen, 1
+      // when its end does. Only the minute count is state, so this re-renders once a minute, not on every scroll.
+      const body = document.querySelector('.reading-body')
+      if (body) {
+        const r = body.getBoundingClientRect()
+        setLeft(minutesLeft(wordCount, r.height > 0 ? (window.innerHeight - r.top) / r.height : 0))
+      }
     }
+    on()
     window.addEventListener('scroll', on, { passive: true })
-    return () => window.removeEventListener('scroll', on)
-  }, [])
+    window.addEventListener('resize', on)
+    return () => {
+      window.removeEventListener('scroll', on)
+      window.removeEventListener('resize', on)
+    }
+  }, [wordCount])
+  // ← / → turn the chapter, unless the reader is typing or a modifier is held (browser back/forward, word-jump).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || inField(e.target)) return
+      const href = e.key === 'ArrowRight' ? nextHref : e.key === 'ArrowLeft' ? prevHref : null
+      if (href) router.push(href)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [router, prevHref, nextHref])
 
   return (
     <div
@@ -77,116 +128,163 @@ export function ReaderFrame({
       data-tone={prefs.tone}
       data-size={prefs.size}
       data-face={prefs.face}
+      data-leading={prefs.leading}
+      data-margin-comments={prefs.marginComments}
     >
-      <header
-        className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 ${hidden ? '-translate-y-full' : ''}`}
-      >
-        <div className="mx-auto flex h-12 max-w-[72ch] items-center gap-1 px-2 text-[13px]">
-          <Link
-            href={routes.publicWork(publicPath)}
-            aria-label={`Back to ${workTitle}`}
-            className="press grid size-9 shrink-0 place-items-center rounded-full text-secondary hover:bg-hover hover:text-primary"
-          >
-            <ArrowLeftIcon size={18} />
-          </Link>
-          <p className="min-w-0 flex-1 truncate text-secondary">{workTitle}</p>
-          <span className="shrink-0 px-1 font-mono text-[11px] uppercase tracking-[0.08em] text-tertiary">
-            {chapterIndex + 1} / {chapters.length}
-          </span>
-          <DialogTrigger>
-            <AriaButton
-              aria-label="Reading settings"
-              className="press grid size-9 place-items-center rounded-full font-display text-[17px] text-primary outline-none hover:bg-hover data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
+      <PrefsContext.Provider value={{ prefs, set }}>
+        <header
+          className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 ${hidden ? '-translate-y-full' : ''}`}
+        >
+          <div className="mx-auto flex h-12 max-w-[72ch] items-center gap-1 px-2 text-[13px]">
+            <Link
+              href={routes.publicWork(publicPath)}
+              aria-label={`Back to ${workTitle}`}
+              className="press grid size-9 shrink-0 place-items-center rounded-full text-secondary hover:bg-hover hover:text-primary"
             >
-              Aa
-            </AriaButton>
-            <Popover
-              placement="bottom end"
-              className="popover w-64 rounded-md border border-subtle bg-raised p-3 font-ui shadow-[0_2px_4px_rgb(34_34_31/.06),0_12px_32px_rgb(34_34_31/.14)]"
-            >
-              <Dialog aria-label="Reading settings" className="flex flex-col gap-3 outline-none">
-                <div>
-                  <p className="mb-1 text-[12px] text-tertiary">Text size</p>
-                  <div role="group" aria-label="Text size" className="flex gap-1 rounded-md bg-app p-0.5">
-                    {(['s', 'm', 'l', 'xl'] as const).map((s, i) => (
-                      <button
-                        key={s}
-                        type="button"
-                        aria-pressed={prefs.size === s}
-                        onClick={() => set({ size: s })}
-                        className={seg}
-                      >
-                        <span style={{ fontSize: 12 + i * 2 }}>A</span>
-                        <span className="sr-only"> {['Small', 'Medium', 'Large', 'Extra large'][i]}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1 text-[12px] text-tertiary">Page</p>
-                  <div role="group" aria-label="Page tone" className="flex gap-1 rounded-md bg-app p-0.5">
-                    {(['paper', 'sepia', 'night'] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        aria-pressed={prefs.tone === t}
-                        onClick={() => set({ tone: t })}
-                        className={seg}
-                      >
-                        {t[0]!.toUpperCase() + t.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1 text-[12px] text-tertiary">Typeface</p>
-                  <div role="group" aria-label="Typeface" className="flex gap-1 rounded-md bg-app p-0.5">
-                    {(['serif', 'sans'] as const).map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        aria-pressed={prefs.face === f}
-                        onClick={() => set({ face: f })}
-                        className={seg}
-                      >
-                        <span className={f === 'serif' ? 'font-manuscript' : 'font-ui'}>
-                          {f === 'serif' ? 'Serif' : 'Sans'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </Dialog>
-            </Popover>
-          </DialogTrigger>
-          <button
-            type="button"
-            aria-label="Contents"
-            onClick={() => setContents(true)}
-            className="press grid size-9 place-items-center rounded-full text-secondary hover:bg-hover hover:text-primary"
-          >
-            <ChaptersIcon size={18} />
-          </button>
-        </div>
-      </header>
-      {children}
-      <Sheet title="Contents" isOpen={contents} onOpenChange={setContents}>
-        <ol className="-mx-2 flex flex-col">
-          {chapters.map((c, i) => (
-            <li key={c.slug}>
-              <Link
-                href={routes.readChapter(publicPath, c.slug)}
-                aria-current={i === chapterIndex ? 'page' : undefined}
-                onClick={() => setContents(false)}
-                className={`press flex items-baseline gap-3 rounded-md px-2 py-2.5 hover:bg-hover ${i === chapterIndex ? 'bg-selected' : ''}`}
+              <ArrowLeftIcon size={18} />
+            </Link>
+            <p className="min-w-0 flex-1 truncate text-secondary">{workTitle}</p>
+            {left !== null && (
+              <span className="shrink-0 px-1 font-ui text-[12px] text-tertiary">
+                {left} min left in chapter
+              </span>
+            )}
+            <span className="shrink-0 px-1 font-mono text-[11px] uppercase tracking-[0.08em] text-tertiary">
+              {chapterIndex + 1} / {chapters.length}
+            </span>
+            <DialogTrigger>
+              <AriaButton
+                aria-label="Reading settings"
+                className="press grid size-9 place-items-center rounded-full font-display text-[17px] text-primary outline-none hover:bg-hover data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus"
               >
-                <span className="w-6 text-right font-mono text-[12px] text-tertiary">{i + 1}</span>
-                <span className="min-w-0 truncate font-manuscript text-[16px] text-primary">{c.title}</span>
-              </Link>
-            </li>
-          ))}
-        </ol>
-      </Sheet>
+                Aa
+              </AriaButton>
+              <Popover
+                placement="bottom end"
+                className="popover w-64 rounded-md border border-subtle bg-raised p-3 font-ui shadow-[0_2px_4px_rgb(34_34_31/.06),0_12px_32px_rgb(34_34_31/.14)]"
+              >
+                <Dialog aria-label="Reading settings" className="flex flex-col gap-3 outline-none">
+                  <div>
+                    <p className="mb-1 text-[12px] text-tertiary">Text size</p>
+                    <div role="group" aria-label="Text size" className="flex gap-1 rounded-md bg-app p-0.5">
+                      {(['s', 'm', 'l', 'xl'] as const).map((s, i) => (
+                        <button
+                          key={s}
+                          type="button"
+                          aria-pressed={prefs.size === s}
+                          onClick={() => set({ size: s })}
+                          className={seg}
+                        >
+                          <span style={{ fontSize: 12 + i * 2 }}>A</span>
+                          <span className="sr-only"> {['Small', 'Medium', 'Large', 'Extra large'][i]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[12px] text-tertiary">Page</p>
+                    <div role="group" aria-label="Page tone" className="flex gap-1 rounded-md bg-app p-0.5">
+                      {(['paper', 'sepia', 'night'] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          aria-pressed={prefs.tone === t}
+                          onClick={() => set({ tone: t })}
+                          className={seg}
+                        >
+                          {t[0]!.toUpperCase() + t.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[12px] text-tertiary">Typeface</p>
+                    <div role="group" aria-label="Typeface" className="flex gap-1 rounded-md bg-app p-0.5">
+                      {(['serif', 'sans'] as const).map((f) => (
+                        <button
+                          key={f}
+                          type="button"
+                          aria-pressed={prefs.face === f}
+                          onClick={() => set({ face: f })}
+                          className={seg}
+                        >
+                          <span className={f === 'serif' ? 'font-manuscript' : 'font-ui'}>
+                            {f === 'serif' ? 'Serif' : 'Sans'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[12px] text-tertiary">Line spacing</p>
+                    <div
+                      role="group"
+                      aria-label="Line spacing"
+                      className="flex gap-1 rounded-md bg-app p-0.5"
+                    >
+                      {(['normal', 'roomy'] as const).map((l) => (
+                        <button
+                          key={l}
+                          type="button"
+                          aria-pressed={prefs.leading === l}
+                          onClick={() => set({ leading: l })}
+                          className={seg}
+                        >
+                          {l === 'normal' ? 'Normal' : 'Roomy'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span id="margin-comments-label" className="text-[13px] text-primary">
+                      Comments in the margin
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={prefs.marginComments}
+                      aria-labelledby="margin-comments-label"
+                      onClick={() => set({ marginComments: !prefs.marginComments })}
+                      className="press relative h-6 w-10 shrink-0 rounded-full border border-control bg-app outline-none aria-checked:border-transparent aria-checked:bg-action focus-visible:ring-2 focus-visible:ring-focus"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-raised shadow-[0_1px_2px_rgb(34_34_31/.3)] transition-transform ${prefs.marginComments ? 'translate-x-4' : ''}`}
+                      />
+                    </button>
+                  </div>
+                </Dialog>
+              </Popover>
+            </DialogTrigger>
+            <button
+              type="button"
+              aria-label="Contents"
+              onClick={() => setContents(true)}
+              className="press grid size-9 place-items-center rounded-full text-secondary hover:bg-hover hover:text-primary"
+            >
+              <ChaptersIcon size={18} />
+            </button>
+          </div>
+        </header>
+        {children}
+        <Sheet title="Contents" isOpen={contents} onOpenChange={setContents}>
+          <ol className="-mx-2 flex flex-col">
+            {chapters.map((c, i) => (
+              <li key={c.slug}>
+                <Link
+                  href={routes.readChapter(publicPath, c.slug)}
+                  aria-current={i === chapterIndex ? 'page' : undefined}
+                  onClick={() => setContents(false)}
+                  className={`press flex items-baseline gap-3 rounded-md px-2 py-2.5 hover:bg-hover ${i === chapterIndex ? 'bg-selected' : ''}`}
+                >
+                  <span className="w-6 text-right font-mono text-[12px] text-tertiary">{i + 1}</span>
+                  <span className="min-w-0 truncate font-manuscript text-[16px] text-primary">{c.title}</span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </Sheet>
+      </PrefsContext.Provider>
     </div>
   )
 }

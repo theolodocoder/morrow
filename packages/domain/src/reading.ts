@@ -63,6 +63,12 @@ export function minutesFor(words: number): number {
   return Math.ceil(Math.max(0, words) / 230)
 }
 
+/** Minutes left given scroll progress (0..1); null when there is nothing to say, so the running head stays quiet. */
+export function minutesLeft(words: number, progress: number): number | null {
+  const left = minutesFor(Math.max(0, words) * (1 - Math.min(1, Math.max(0, progress))))
+  return left > 0 ? left : null
+}
+
 /** The opener's credit line, author first: "Ama Owusu, with Tolu Ade"; past three people the rest are counted. */
 export function creditLine(names: readonly string[]): string {
   const [author, ...rest] = names

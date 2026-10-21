@@ -44,6 +44,9 @@ export default async function ReadChapterPage({ params }: Params) {
       workTitle={work.title}
       chapterIndex={chapter.index}
       chapters={work.chapters}
+      wordCount={chapter.wordCount}
+      prevHref={chapter.prev ? routes.readChapter(work.publicPath, chapter.prev.slug) : null}
+      nextHref={chapter.next ? routes.readChapter(work.publicPath, chapter.next.slug) : null}
     >
       <ReadingProgress publicPath={work.publicPath} chapterSlug={chapter.slug} />
       <main id="main" className="manuscript mx-auto max-w-[calc(65ch+2rem)] px-4 pb-16">

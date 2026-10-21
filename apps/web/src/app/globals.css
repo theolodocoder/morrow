@@ -1007,6 +1007,9 @@
 .reader[data-size='xl'] .manuscript {
   font-size: 24px;
 }
+.reader[data-leading='roomy'] .manuscript {
+  line-height: 1.85;
+}
 .reader[data-face='sans'] .reading-body {
   font-family: var(--font-ui-family);
 }

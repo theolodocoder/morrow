@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { creditLine, minutesFor, sectionLabel } from '../src/index.ts'
+import { creditLine, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
 
 describe('sectionLabel', () => {
   it('names fiction chapters in words', () => {
@@ -32,6 +32,22 @@ describe('minutesFor', () => {
     expect(minutesFor(230)).toBe(1)
     expect(minutesFor(231)).toBe(2)
     expect(minutesFor(460)).toBe(2)
+  })
+})
+
+describe('minutesLeft', () => {
+  it('counts the unread share, rounded up', () => {
+    expect(minutesLeft(2300, 0)).toBe(10)
+    expect(minutesLeft(2300, 0.5)).toBe(5)
+    expect(minutesLeft(2300, 0.95)).toBe(1)
+  })
+  it('shows nothing for an empty chapter or once it is finished', () => {
+    expect(minutesLeft(0, 0.3)).toBeNull()
+    expect(minutesLeft(2300, 1)).toBeNull()
+  })
+  it('clamps progress to 0..1', () => {
+    expect(minutesLeft(2300, -1)).toBe(10)
+    expect(minutesLeft(2300, 2)).toBeNull()
   })
 })
 
