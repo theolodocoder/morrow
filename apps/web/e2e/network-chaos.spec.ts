@@ -169,7 +169,7 @@ async function serverCopy(browser: Browser, email: string, url: string) {
   await p.getByLabel('Email').fill(email)
   await p.getByLabel('Password').fill(password)
   await p.getByRole('button', { name: 'Sign in' }).click()
-  await expect(p).toHaveURL(/\/app\/library$/)
+  await expect(p).toHaveURL(/\/app\/library$/, { timeout: 30_000 }) // password hashing is slow on a busy machine
   await p.goto(url)
   await status(p, 'Saved')
   const t = await text(p)
@@ -317,7 +317,9 @@ test('slow writer and fast writer in the same paragraph converge', async ({ brow
   await caretAtEnd(a, 0)
   await caretAtEnd(b, 0)
   await Promise.all([a.keyboard.type(a1, { delay: 15 }), b.keyboard.type(b1, { delay: 15 })])
-  // Different paragraphs, at once.
+  // Different paragraphs, at once. First let the slow side catch up: a click landing while remote keystrokes
+  // stream in can be undone by the editor restoring its previous selection (a race the test isn't about).
+  await converged([a, b])
   const a2 = words(320)
   const b2 = words(320, true)
   await caretAtEnd(a, 1)
@@ -448,13 +450,11 @@ test('long offline then reconnect with concurrent remote edits', async ({ browse
   for (const w of writers) await w.ctx.close()
 })
 
-// Product bug (R2-B1): y-tiptap turns each edit into a Yjs edit by diffing the block's old and new text
-// (simpleDiff), which credits a typed letter to an identical existing letter next to the caret. When a co-writer
-// deletes that existing letter, the typed one goes with it and the real new letter is left stranded further on.
+// Regression (R2-B1, fixed in the y-tiptap patch): the editor→Yjs text diff credited a letter typed right before the
+// same letter to the existing one, so a co-writer deleting that letter took the typed one with it.
 test('a letter typed offline just before the same letter a co-writer deletes stays put', async ({
   browser,
 }) => {
-  test.fail()
   const start = 'Keep this start. '
   const doomed = 'Doomed sentence here. '
   const { writers } = await room(browser, [`${start}${doomed}Keep this end.`], ['Tolu'])
@@ -477,10 +477,9 @@ test('a letter typed offline just before the same letter a co-writer deletes sta
   for (const w of writers) await w.ctx.close()
 })
 
-// Product bug (R2-B2): use-collab.ts restarts the 1 s "Saving…" timer on every unsynced-count change, so while the
-// writer keeps typing faster than acknowledgements arrive the label never leaves "Saved".
+// Regression (R2-B2): the 1 s "Saving…" delay restarted on every keystroke, so steady typing on a slow link kept
+// "Saved" up while words were still in flight.
 test('a slow link never says "Saved" while words are still in flight', async ({ browser }) => {
-  test.fail()
   const { url, ownerEmail, writers } = await room(browser, ['111'], ['Tolu'], true)
   const [a, b] = writers.map((w) => w.page) as [Page, Page]
   const net = await network(writers[0]!)
@@ -559,10 +558,8 @@ test('status stays honest under chaos', async ({ browser }) => {
   for (const w of writers) await w.ctx.close()
 })
 
-// Product bug (R2-B3): nothing reconnects when the browser comes back online; the provider's backoff timer (up to
-// 30 s) decides, so after a long outage the label sits on "Reconnecting…" for up to half a minute.
+// Regression (R2-B3): coming back online didn't reconnect; the provider's backoff (up to 30 s) decided when.
 test('status recovers within 10 s once the network is back after a long outage', async ({ browser }) => {
-  test.fail()
   test.setTimeout(170_000)
   const { url, ownerEmail, writers } = await room(browser, ['111'], ['Tolu'])
   const [a, b] = writers.map((w) => w.page) as [Page, Page]

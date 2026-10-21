@@ -332,3 +332,63 @@ describe('forms of writing (schema v3)', () => {
     v.destroy()
   })
 })
+
+describe('concurrent typing next to a deleted letter (R2-B1)', () => {
+  // Two replicas apart (one offline): A types where B deletes. Each letter A types must stay A's, even when it is
+  // the same letter as the one right after the caret — the editor→Yjs diff must not credit it to that letter.
+  const pair = (text: string) => {
+    const seed = new Y.Doc()
+    const s = new Editor({
+      element: document.createElement('div'),
+      extensions: manuscriptExtensions({ collaboration: { document: seed } }),
+    })
+    s.commands.setContent(`<p>${text}</p>`)
+    const replica = () => {
+      const doc = new Y.Doc()
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(seed))
+      const e = new Editor({
+        element: document.createElement('div'),
+        extensions: manuscriptExtensions({ collaboration: { document: doc } }),
+      })
+      return { doc, e }
+    }
+    s.destroy()
+    return [replica(), replica()] as const
+  }
+  const type = (e: Editor, at: number, s: string) => {
+    e.commands.setTextSelection(at)
+    for (const ch of s) e.view.dispatch(e.state.tr.insertText(ch)) // one transaction per keystroke, at the caret
+  }
+  const merge = (a: Y.Doc, b: Y.Doc) => {
+    Y.applyUpdate(a, Y.encodeStateAsUpdate(b))
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a))
+  }
+
+  it('keeps a letter typed right before the same letter a co-writer deletes', () => {
+    const [a, b] = pair('Keep this start. Doomed sentence here. Keep this end.')
+    type(a.e, 1 + 'Keep this start. Doomed '.length, 'willow words ')
+    expect(a.e.getText()).toBe('Keep this start. Doomed willow words sentence here. Keep this end.')
+    const from = 1 + 'Keep this start. '.length
+    b.e.commands.deleteRange({ from, to: from + 'Doomed sentence here. '.length })
+    merge(a.doc, b.doc)
+    expect(a.e.getText()).toBe('Keep this start. willow words Keep this end.')
+    expect(b.e.getText()).toBe(a.e.getText())
+    a.e.destroy()
+    b.e.destroy()
+  })
+
+  it('backspace deletes the letter before the caret, not its identical neighbour', () => {
+    const [a, b] = pair('a ssx b')
+    // A deletes the first "s" (caret after it); B, apart, deletes the second — together, both are gone.
+    const caret = 1 + 'a s'.length
+    a.e.commands.setTextSelection(caret)
+    a.e.view.dispatch(a.e.state.tr.delete(caret - 1, caret)) // what Backspace does at the caret
+    expect(a.e.getText()).toBe('a sx b')
+    b.e.commands.deleteRange({ from: 1 + 'a s'.length, to: 1 + 'a ss'.length })
+    merge(a.doc, b.doc)
+    expect(a.e.getText()).toBe('a x b')
+    expect(b.e.getText()).toBe(a.e.getText())
+    a.e.destroy()
+    b.e.destroy()
+  })
+})

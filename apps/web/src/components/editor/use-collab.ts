@@ -86,7 +86,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       cancelled = false,
       // the facts the label is made from
       socketUp = false,
-      serverSynced = false,
+      serverSynced = false, // for this connection: the provider never reports losing it, so a drop resets it here
+      everSynced = false,
       unsynced = 0,
       onDevice = false, // this document's IndexedDB store is open and takes every change
       // the device copy's words are in this doc, or there is no device copy: until then they may still be missing
@@ -104,17 +105,19 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     }
     // The server has everything this tab sent, but y-indexeddb doesn't share between tabs: first take in what other
     // tabs left in the device copy. Anything new is sent (and re-marks); clear only when nothing new arrived.
-    let checking = false
+    let checking = false,
+      // One try per state of the facts: if the mark can't be cleared (storage failing), don't retry in a loop.
+      confirmTried = false
     const confirmSaved = async () => {
       const copy = local
       if (checking || !copy) return
-      checking = true
+      checking = confirmTried = true
       try {
         await fetchUpdates(copy)
         if (copy === local && mode !== 'read' && serverSynced && unsynced === 0)
           setPendingWriting(me.id, documentId, false)
       } catch {
-        onDevice = false // the store closed under us: keep the mark, stop relying on the copy
+        if (copy === local) dropDeviceCopy(false) // the store closed under us: keep the mark, detach the copy
       } finally {
         checking = false
       }
@@ -122,11 +125,10 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     }
     // One place turns the facts into the label, so no single event can leave a stale one behind.
     const refresh = () => {
-      clearTimeout(savingTimer)
       const pending = pendingNow()
       const confirmed = mode !== 'read' && serverSynced && unsynced === 0
       // Clear the mark first; "Saved" follows (from the refresh it ends with), so "Saved" means nothing is pending.
-      if (confirmed && pending && onDevice && deviceLoaded) void confirmSaved()
+      if (confirmed && pending && onDevice && deviceLoaded && !confirmTried) void confirmSaved()
       if (!navigator.onLine || !socketUp) {
         if (mode !== 'read' && (unsynced > 0 || pending) && onDevice) settle('on-device')
         else settle(navigator.onLine ? 'reconnecting' : 'offline')
@@ -134,15 +136,33 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         if (serverSynced) settle('read-only')
       } else if (confirmed && (!pending || (!onDevice && deviceLoaded))) settle('saved')
       // Syncing words the server hasn't got yet (or that are still loading from the device): never "Saved" yet.
-      else if (pending && (!serverSynced || !deviceLoaded)) settle('saving')
-      else if (unsynced > 0) savingTimer = setTimeout(() => settle('saving'), SAVING_DELAY_MS)
+      // After a reconnect, too, until this connection's sync confirms the server has everything.
+      else if ((pending || everSynced) && (!serverSynced || !deviceLoaded)) settle('saving')
+      else if (unsynced > 0) {
+        // Timed from the first unconfirmed change, not the latest: typing must not keep pushing it back while
+        // "Saved" stays up (only the label's appearance waits, so quick saves don't flicker).
+        savingTimer ??= setTimeout(() => {
+          savingTimer = undefined
+          settle('saving')
+        }, SAVING_DELAY_MS)
+        return
+      }
+      clearTimeout(savingTimer)
+      savingTimer = undefined
+    }
+    // Back online: reconnect now rather than when the provider's backoff (up to 30 s) next tries. If the network
+    // isn't really back, that attempt fails and the provider backs off again as before.
+    const online = () => {
+      if (live && !socketUp && !terminal) void live.connect()
+      refresh()
     }
     window.addEventListener('offline', refresh)
-    window.addEventListener('online', refresh)
+    window.addEventListener('online', online)
     // Another tab changed the marks: if it cleared this document's while words here are still unsent, mark it again.
     const onMarks = (e: StorageEvent) => {
       if (e.key !== pendingKey(me.id)) return
       if (unsynced > 0 && onDevice && mode !== 'read') markPending()
+      confirmTried = false // another tab's words may be in the device copy now: look again
       if (live) refresh()
     }
     window.addEventListener('storage', onMarks)
@@ -228,17 +248,21 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         },
         onStatus: ({ status: s }) => {
           socketUp = s === 'connected'
+          if (!socketUp) serverSynced = false
           if (s !== 'connecting') refresh()
         },
         onSynced: ({ state }) => {
           serverSynced = state
           if (!state) return
+          everSynced = true
+          confirmTried = false
           setSynced(true)
           setReadOnly(mode === 'read')
           refresh()
         },
         onUnsyncedChanges: ({ number }) => {
           unsynced = number
+          if (number > 0) confirmTried = false
           refresh()
         },
         onAuthenticationFailed: ({ reason }) => {
@@ -305,7 +329,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       cancelled = true
       clearTimeout(savingTimer)
       window.removeEventListener('offline', refresh)
-      window.removeEventListener('online', refresh)
+      window.removeEventListener('online', online)
       window.removeEventListener('storage', onMarks)
       window.removeEventListener('beforeunload', leaving)
       live?.destroy()

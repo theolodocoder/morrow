@@ -1,0 +1,170 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..49d23229fccfff8a8d2880d1c407e2549ac96731 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -627,6 +627,17 @@ const recoverSelectionEndpoint = (newDoc, oldDoc, oldAbs, resolved) => {
+ 	const recovered = findAbsolutePositionAfterStructuralChange(oldDoc, newDoc, oldAbs);
+ 	return recovered !== null ? recovered : resolved;
+ };
++// Morrow patch: a relative position anchored to an item that still exists already resolves to the right place.
++// Second-guessing it whenever the block's text changed (any concurrent typing in that block) pulled the caret back
++// by the remote insertions when blocks carry unique ids, and two writers at one spot typed backwards.
++const anchoredToLiveItem = (binding, rel) => {
++	if (rel == null || rel.item == null) return false;
++	try {
++		return !yjs.getItem(binding.doc.store, rel.item).deleted;
++	} catch {
++		return false;
++	}
++};
+ const restoreRelativeSelection = (tr, relSel, binding, oldDoc) => {
+ 	if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
+ 		if (relSel.type === "all") tr.setSelection(new prosemirror_state.AllSelection(tr.doc));
+@@ -642,8 +653,8 @@ const restoreRelativeSelection = (tr, relSel, binding, oldDoc) => {
+ 			let anchor = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.anchor, binding.mapping);
+ 			let head = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
+ 			if (oldDoc != null) {
+-				if (resolvePositionMigration(binding.type, relSel.anchor) === relSel.anchor) anchor = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absAnchor, anchor);
+-				if (resolvePositionMigration(binding.type, relSel.head) === relSel.head) head = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absHead, head);
++				if (resolvePositionMigration(binding.type, relSel.anchor) === relSel.anchor && !anchoredToLiveItem(binding, relSel.anchor)) anchor = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absAnchor, anchor);
++				if (resolvePositionMigration(binding.type, relSel.head) === relSel.head && !anchoredToLiveItem(binding, relSel.head)) head = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absHead, head);
+ 			}
+ 			if (anchor === null) anchor = head;
+ 			if (head === null) head = anchor;
+@@ -910,6 +921,42 @@ const ytextTrans = (ytext) => {
+ };
+ //#endregion
+ //#region src/lib/utils/reconciliation/updateYText.ts
++// Morrow patch: diff at the writer's caret. A plain text diff credits a letter typed right before the same letter
++// (or a backspace next to an identical one) to the existing letter, so a co-writer deleting that letter took the
++// new one with it. The caret says where the change is: what was typed ends there, what was deleted was there.
++const caretInText = (ptexts, meta) => {
++	const view = meta.prosemirrorView;
++	const sel = view == null ? null : view.state.selection;
++	if (sel == null || !sel.empty || ptexts.length === 0) return null;
++	const { parent, parentOffset } = sel.$head;
++	let offset = 0;
++	for (let i = 0; i < parent.childCount; i++) {
++		const child = parent.child(i);
++		if (child === ptexts[0]) {
++			const at = parentOffset - offset;
++			const length = ptexts.reduce((n, p) => n + p.nodeSize, 0);
++			return at >= 0 && at <= length ? at : null;
++		}
++		offset += child.nodeSize;
++	}
++	return null;
++};
++const diffAtCaret = (diff, a, b, caret) => {
++	if (caret === null) return diff(a, b);
++	let right = 0;
++	while (right < a.length && right < b.length - caret && a[a.length - right - 1] === b[b.length - right - 1]) right++;
++	let left = 0;
++	while (left + right < a.length && left + right < b.length && a[left] === b[left]) left++;
++	// Only when the change really sits at the caret; a command can change text away from it, and a split surrogate
++	// pair is left to the plain diff, which handles it.
++	const split = left > 0 && /[\uD800-\uDBFF]/.test(a[left - 1]) || right > 0 && /[\uDC00-\uDFFF]/.test(a[a.length - right]);
++	if (b.length - right !== caret || split) return diff(a, b);
++	return {
++		index: left,
++		remove: a.length - left - right,
++		insert: b.slice(left, b.length - right)
++	};
++};
+ const updateYText = (ytext, ptexts, meta) => {
+ 	meta.mapping.set(ytext, ptexts);
+ 	const { nAttrs, str } = ytextTrans(ytext);
+@@ -920,7 +967,7 @@ const updateYText = (ytext, ptexts, meta) => {
+ 			attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
+ 		};
+ 	});
+-	const { insert, remove, index } = (0, lib0_diff.simpleDiff)(str, content.map((c) => c.insert).join(""));
++	const { insert, remove, index } = diffAtCaret(lib0_diff.simpleDiff, str, content.map((c) => c.insert).join(""), caretInText(ptexts, meta));
+ 	ytext.delete(index, remove);
+ 	ytext.insert(index, insert);
+ 	ytext.applyDelta(content.map((c) => ({
+diff --git a/dist/index.js b/dist/index.js
+index 50bcfe723ad3dd8b8c24c11d710f5607319fb8a8..00d68bf2aa0bf1095b8ce2e7e6fc0e2abea353be 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -594,6 +594,17 @@ const recoverSelectionEndpoint = (newDoc, oldDoc, oldAbs, resolved) => {
+ 	const recovered = findAbsolutePositionAfterStructuralChange(oldDoc, newDoc, oldAbs);
+ 	return recovered !== null ? recovered : resolved;
+ };
++// Morrow patch: a relative position anchored to an item that still exists already resolves to the right place.
++// Second-guessing it whenever the block's text changed (any concurrent typing in that block) pulled the caret back
++// by the remote insertions when blocks carry unique ids, and two writers at one spot typed backwards.
++const anchoredToLiveItem = (binding, rel) => {
++	if (rel == null || rel.item == null) return false;
++	try {
++		return !Y.getItem(binding.doc.store, rel.item).deleted;
++	} catch {
++		return false;
++	}
++};
+ const restoreRelativeSelection = (tr, relSel, binding, oldDoc) => {
+ 	if (relSel !== null && relSel.anchor !== null && relSel.head !== null) {
+ 		if (relSel.type === "all") tr.setSelection(new AllSelection(tr.doc));
+@@ -609,8 +620,8 @@ const restoreRelativeSelection = (tr, relSel, binding, oldDoc) => {
+ 			let anchor = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.anchor, binding.mapping);
+ 			let head = relativePositionToAbsolutePosition(binding.doc, binding.type, relSel.head, binding.mapping);
+ 			if (oldDoc != null) {
+-				if (resolvePositionMigration(binding.type, relSel.anchor) === relSel.anchor) anchor = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absAnchor, anchor);
+-				if (resolvePositionMigration(binding.type, relSel.head) === relSel.head) head = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absHead, head);
++				if (resolvePositionMigration(binding.type, relSel.anchor) === relSel.anchor && !anchoredToLiveItem(binding, relSel.anchor)) anchor = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absAnchor, anchor);
++				if (resolvePositionMigration(binding.type, relSel.head) === relSel.head && !anchoredToLiveItem(binding, relSel.head)) head = recoverSelectionEndpoint(tr.doc, oldDoc, relSel.absHead, head);
+ 			}
+ 			if (anchor === null) anchor = head;
+ 			if (head === null) head = anchor;
+@@ -877,6 +888,42 @@ const ytextTrans = (ytext) => {
+ };
+ //#endregion
+ //#region src/lib/utils/reconciliation/updateYText.ts
++// Morrow patch: diff at the writer's caret. A plain text diff credits a letter typed right before the same letter
++// (or a backspace next to an identical one) to the existing letter, so a co-writer deleting that letter took the
++// new one with it. The caret says where the change is: what was typed ends there, what was deleted was there.
++const caretInText = (ptexts, meta) => {
++	const view = meta.prosemirrorView;
++	const sel = view == null ? null : view.state.selection;
++	if (sel == null || !sel.empty || ptexts.length === 0) return null;
++	const { parent, parentOffset } = sel.$head;
++	let offset = 0;
++	for (let i = 0; i < parent.childCount; i++) {
++		const child = parent.child(i);
++		if (child === ptexts[0]) {
++			const at = parentOffset - offset;
++			const length = ptexts.reduce((n, p) => n + p.nodeSize, 0);
++			return at >= 0 && at <= length ? at : null;
++		}
++		offset += child.nodeSize;
++	}
++	return null;
++};
++const diffAtCaret = (diff, a, b, caret) => {
++	if (caret === null) return diff(a, b);
++	let right = 0;
++	while (right < a.length && right < b.length - caret && a[a.length - right - 1] === b[b.length - right - 1]) right++;
++	let left = 0;
++	while (left + right < a.length && left + right < b.length && a[left] === b[left]) left++;
++	// Only when the change really sits at the caret; a command can change text away from it, and a split surrogate
++	// pair is left to the plain diff, which handles it.
++	const split = left > 0 && /[\uD800-\uDBFF]/.test(a[left - 1]) || right > 0 && /[\uDC00-\uDFFF]/.test(a[a.length - right]);
++	if (b.length - right !== caret || split) return diff(a, b);
++	return {
++		index: left,
++		remove: a.length - left - right,
++		insert: b.slice(left, b.length - right)
++	};
++};
+ const updateYText = (ytext, ptexts, meta) => {
+ 	meta.mapping.set(ytext, ptexts);
+ 	const { nAttrs, str } = ytextTrans(ytext);
+@@ -887,7 +934,7 @@ const updateYText = (ytext, ptexts, meta) => {
+ 			attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
+ 		};
+ 	});
+-	const { insert, remove, index } = simpleDiff(str, content.map((c) => c.insert).join(""));
++	const { insert, remove, index } = diffAtCaret(simpleDiff, str, content.map((c) => c.insert).join(""), caretInText(ptexts, meta));
+ 	ytext.delete(index, remove);
+ 	ytext.insert(index, insert);
+ 	ytext.applyDelta(content.map((c) => ({
