@@ -51,8 +51,8 @@ async function fetchServer(publicPath: string): Promise<ReadingPositions | null>
   }
 }
 
-/** Whether the account took the save; a failure (rate limit, outage, offline) is retried on the next flush. */
-function sendServer(publicPath: string, items: Position[]): Promise<boolean> {
+/** The save's HTTP status, 0 when it never arrived; a failure (rate limit, outage, offline) is retried on the next flush. */
+function sendServer(publicPath: string, items: Position[]): Promise<number> {
   // keepalive lets the last save outlive the page; same-origin, so the session cookie goes with it
   return fetch(url(publicPath), {
     method: 'PUT',
@@ -61,8 +61,8 @@ function sendServer(publicPath: string, items: Position[]): Promise<boolean> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ items }),
   }).then(
-    (res) => res.ok,
-    () => false,
+    (res) => res.status,
+    () => 0,
   )
 }
 
@@ -106,6 +106,9 @@ export function useReadingPosition(publicPath: string, chapterSlug: string, live
     let signedIn = false
     let dirty = false
     let readerMoved = false
+    // Arriving at a spot below the text (#discussion) is not reading to the end: nothing is saved for this chapter,
+    // nor is it made the last one read, until the reader is back in the text.
+    let arrived = !!location.hash
     let alive = true
 
     const saveLocal = () => {
@@ -116,9 +119,13 @@ export function useReadingPosition(publicPath: string, chapterSlug: string, live
     // seconds at most, never in a loop). Saves are idempotent, so one sent twice does no harm.
     const flush = () => {
       if (!signedIn || !dirty) return
+      const items = arrived ? pending : [...pending, here]
+      if (!items.length) return
       const sent = { here, pending }
-      void sendServer(publicPath, [...pending, here]).then((ok) => {
-        if (!ok) return
+      void sendServer(publicPath, items).then((status) => {
+        // the session ended: stop saving to the account rather than failing every few seconds; the device keeps it
+        if (status === 401) signedIn = false
+        if (status < 200 || status > 299) return
         if (pending === sent.pending) pending = []
         if (here === sent.here) dirty = false
       })
@@ -134,6 +141,10 @@ export function useReadingPosition(publicPath: string, chapterSlug: string, live
     const visible = new Set<Element>()
     const record = () => {
       const top = blocks.find((b) => visible.has(b))
+      if (arrived) {
+        if (!readerMoved || !top) return
+        arrived = false
+      }
       const p = percent()
       if (p < here.percent || (p === here.percent && (top?.dataset.block ?? null) === here.blockId)) return
       here = { chapterSlug, blockId: top?.dataset.block ?? here.blockId, percent: p }
@@ -146,7 +157,7 @@ export function useReadingPosition(publicPath: string, chapterSlug: string, live
     })
     blocks.forEach((b) => io.observe(b))
     window.addEventListener('scroll', record, { passive: true })
-    saveLocal()
+    if (!arrived) saveLocal()
 
     // Restore only if the reader hasn't started moving (or followed a link to a spot) by the time we know where to go.
     const moved = () => (readerMoved = true)
@@ -167,8 +178,8 @@ export function useReadingPosition(publicPath: string, chapterSlug: string, live
           MERGE_LIMIT,
         )
         writeLocal(publicPath, {
-          last: chapterSlug,
-          items: mergePositions(local.items, [...server.items, here], liveList),
+          last: arrived ? local.last : chapterSlug,
+          items: mergePositions(local.items, [...server.items, ...(arrived ? [] : [here])], liveList),
         })
         dirty = true
         flush()

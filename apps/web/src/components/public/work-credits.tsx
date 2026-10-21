@@ -31,7 +31,10 @@ export function WorkCredits({ credits }: { credits: PublicCredit[] }) {
             </>
           )
           return (
-            <li key={`${c.role}:${p.displayName}`} className="flex items-center gap-3 py-1.5 font-ui">
+            <li
+              key={`${c.role}:${p.username ?? p.avatarSeed}`}
+              className="flex items-center gap-3 py-1.5 font-ui"
+            >
               {p.username ? (
                 <Link
                   href={routes.author(p.username)}

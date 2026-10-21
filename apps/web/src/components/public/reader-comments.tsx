@@ -191,7 +191,11 @@ export function CommentThread({
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
-    setList(await api<CommentList>(`/public/reading/${publicPath}/comments${q ? `?${q}` : ''}`))
+    try {
+      setList(await api<CommentList>(`/public/reading/${publicPath}/comments${q ? `?${q}` : ''}`))
+    } catch {
+      // a failed refresh keeps what's on screen (the server's first page, or nothing yet) rather than an error
+    }
   }, [publicPath, q])
   const preloaded = useRef(!!initial)
   useEffect(() => {
