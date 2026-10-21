@@ -5,6 +5,7 @@ import { Avatar, AvatarStack } from '@/components/profile/avatar'
 import { FollowControls } from '@/components/follows/follow-controls'
 import { ReleaseCountdown } from '@/components/public/release-countdown'
 import { WorkActions } from '@/components/public/work-actions'
+import { compact } from '@/lib/format'
 import { routes } from '@/lib/routes'
 
 /*
@@ -29,11 +30,14 @@ export function ChapterEnd({
   work,
   chapter,
   label,
+  comments,
 }: {
   work: PublicWork
   chapter: PublicChapter
   /** this chapter's section label ("Chapter three"); null for a single-piece work */
   label: string | null
+  /** how many comments this chapter's discussion holds; undefined when it couldn't be loaded */
+  comments?: number | undefined
 }) {
   const { next, alternates } = chapter
   // A single-piece work has no "End of …" heading, so its own headings step up to keep the outline unbroken.
@@ -61,8 +65,10 @@ export function ChapterEnd({
           publicPath={work.publicPath}
           title={work.title}
           likes={work.likes}
-          // ponytail: no chapter-scoped count exists, so the link reads "Comments"; add one to PublicChapter to show it
           commentsHref="#discussion"
+          commentsLabel={
+            comments ? `${compact(comments)} ${comments === 1 ? 'Comment' : 'Comments'}` : 'Comments'
+          }
         />
       </div>
 

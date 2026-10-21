@@ -26,14 +26,17 @@ export function WorkActions({
   comments,
   author,
   commentsHref = '#comments',
+  commentsLabel,
 }: {
   /** where the comment count goes (the reader links back to the work page's comments) */
   commentsHref?: string
   publicPath: string
   title: string
   likes: number
-  /** omitted where no matching count exists (a chapter's discussion): the link then reads "Comments" */
+  /** omitted where the link carries its own words instead (`commentsLabel`) */
   comments?: number
+  /** the comment link's text in place of a bare count, e.g. "12 Comments" under a chapter */
+  commentsLabel?: string
   author?: { username: string; name: string }
 }) {
   const router = useRouter()
@@ -133,11 +136,13 @@ export function WorkActions({
         href={commentsHref}
         className={icon}
         aria-label={
-          comments === undefined ? undefined : `${comments} ${comments === 1 ? 'comment' : 'comments'}`
+          commentsLabel || comments === undefined
+            ? undefined
+            : `${comments} ${comments === 1 ? 'comment' : 'comments'}`
         }
       >
         <CommentIcon size={20} />
-        {comments === undefined ? 'Comments' : compact(comments)}
+        {commentsLabel ?? (comments === undefined ? 'Comments' : compact(comments))}
       </a>
       <button
         type="button"

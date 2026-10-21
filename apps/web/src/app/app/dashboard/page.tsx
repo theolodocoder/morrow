@@ -229,7 +229,11 @@ export default async function DashboardPage({ searchParams }: Params) {
                           <>
                             {' '}
                             <Link
-                              href={`${routes.publicWork(a.work.publicPath)}${a.kind === 'comment' ? '#comments' : ''}`}
+                              href={
+                                a.chapterSlug
+                                  ? `${routes.readChapter(a.work.publicPath, a.chapterSlug)}#discussion`
+                                  : `${routes.publicWork(a.work.publicPath)}${a.kind === 'comment' ? '#comments' : ''}`
+                              }
                               className="text-primary hover:underline"
                             >
                               {a.work.title}

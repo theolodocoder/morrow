@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import { minutesLeft } from '@morrow/domain'
 import { Button as AriaButton, Dialog, DialogTrigger, Popover } from 'react-aria-components'
 import { Sheet } from '@/components/ui/sheet'
@@ -29,6 +29,32 @@ const PrefsContext = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => v
 })
 /** The reader's saved preferences, for anything rendered inside the frame (paragraph markers, last-read storage). */
 export const useReaderPrefs = () => useContext(PrefsContext)
+
+/** The one switch for paragraph comment markers, in the Aa settings and under each chapter's discussion. */
+export function MarginCommentsSwitch({ label }: { label: string }) {
+  const { prefs, set } = useReaderPrefs()
+  const id = useId()
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span id={id} className="text-[13px] text-primary">
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={prefs.marginComments}
+        aria-labelledby={id}
+        onClick={() => set({ marginComments: !prefs.marginComments })}
+        className="press relative h-6 w-10 shrink-0 rounded-full border border-control bg-app outline-none aria-checked:border-transparent aria-checked:bg-action focus-visible:ring-2 focus-visible:ring-focus"
+      >
+        <span
+          aria-hidden="true"
+          className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-raised shadow-[0_1px_2px_rgb(34_34_31/.3)] transition-transform ${prefs.marginComments ? 'translate-x-4' : ''}`}
+        />
+      </button>
+    </div>
+  )
+}
 
 const INTERACTIVE =
   'a, button, input, textarea, select, summary, label, [role=button], [role=switch], [role=dialog]'
@@ -270,24 +296,7 @@ export function ReaderFrame({
                       ))}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span id="margin-comments-label" className="text-[13px] text-primary">
-                      Comments in the margin
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={prefs.marginComments}
-                      aria-labelledby="margin-comments-label"
-                      onClick={() => set({ marginComments: !prefs.marginComments })}
-                      className="press relative h-6 w-10 shrink-0 rounded-full border border-control bg-app outline-none aria-checked:border-transparent aria-checked:bg-action focus-visible:ring-2 focus-visible:ring-focus"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-raised shadow-[0_1px_2px_rgb(34_34_31/.3)] transition-transform ${prefs.marginComments ? 'translate-x-4' : ''}`}
-                      />
-                    </button>
-                  </div>
+                  <MarginCommentsSwitch label="Comments in the margin" />
                 </Dialog>
               </Popover>
             </DialogTrigger>

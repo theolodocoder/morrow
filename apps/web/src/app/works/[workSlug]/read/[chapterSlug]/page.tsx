@@ -12,6 +12,8 @@ import { ViewPing } from '@/components/reader/view-ping'
 import { routes } from '@/lib/routes'
 import { ReaderFrame } from '@/components/reader/reader-frame'
 import { ChapterEnd } from '@/components/reader/chapter-end'
+import { ChapterDiscussion } from '@/components/reader/chapter-discussion'
+import type { CommentList } from '@/components/public/reader-comments'
 
 type Params = { params: Promise<{ workSlug: string; chapterSlug: string }> }
 
@@ -36,7 +38,15 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 }
 
 export default async function ReadChapterPage({ params }: Params) {
-  const { work, chapter } = await load(params)
+  const { workSlug, chapterSlug } = await params
+  const [{ work, chapter }, discussion] = await Promise.all([
+    load(params),
+    // The first page as the viewer (their delete and reply rights), and its total for the reactions row's count.
+    // Without it the discussion loads itself in the browser and the row reads "Comments".
+    publicApiAsViewer<CommentList>(
+      `/reading/${encodeURIComponent(workSlug)}/comments?chapter=${encodeURIComponent(chapterSlug)}`,
+    ).catch(() => null),
+  ])
   const label = sectionLabel(work.category, chapter.index, work.chapters.length)
   return (
     <ReaderFrame
@@ -61,8 +71,15 @@ export default async function ReadChapterPage({ params }: Params) {
         </article>
         <ViewPing publicPath={work.publicPath} />
         <ParagraphComments publicPath={work.publicPath} chapterSlug={chapter.slug} />
-        <ChapterEnd work={work} chapter={chapter} label={label} />
+        <ChapterEnd work={work} chapter={chapter} label={label} comments={discussion?.total} />
         <PollCard publicPath={work.publicPath} chapterSlug={chapter.slug} />
+        <ChapterDiscussion
+          publicPath={work.publicPath}
+          chapterSlug={chapter.slug}
+          label={label}
+          title={chapter.title}
+          initial={discussion}
+        />
         {work.openToSuggestions && (
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3 font-ui">
             <p className="text-[13px] text-secondary">{work.author.displayName} welcomes suggestions.</p>

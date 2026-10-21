@@ -86,6 +86,8 @@ test('prompt → write with a goal → schedule and open call → paragraph comm
   await expect(reader.getByText('Looking for')).toBeVisible()
   await expect(reader.getByText('Illustrator', { exact: true })).toBeVisible()
   await reader.getByRole('link', { name: 'Start reading' }).click()
+  // Paragraph comments are off until the reader turns them on (here, under the chapter's discussion).
+  await reader.getByRole('switch', { name: 'Show comments next to paragraphs while reading' }).click()
   await reader.getByText('Nobody had lit them in forty years.').click()
   await reader.getByRole('button', { name: 'Comment on this paragraph' }).click()
   const thread = reader.getByRole('dialog', { name: 'Comments on this paragraph' })

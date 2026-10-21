@@ -5,17 +5,20 @@ import { ReaderComments } from '@/components/public/reader-comments'
 import { CommentIcon } from '@/components/ui/icons'
 import { Sheet } from '@/components/ui/sheet'
 import { api } from '@/lib/client-api'
+import { useReaderPrefs } from './reader-frame'
 
 /**
  * Paragraph comments (P-054), the way serial readers talk: a small count beside any paragraph people have commented
  * on, and a tap on any paragraph offers "Comment". Both open that paragraph's thread in a sheet, quoted at the top.
- * The text itself is untouched; the controls are added beside it.
+ * The text itself is untouched; the controls are added beside it. Off until the reader turns them on (Aa, or the
+ * switch under the chapter's discussion): the page stays quiet by default, and the discussion shows these comments.
  */
 export function ParagraphComments({ publicPath, chapterSlug }: { publicPath: string; chapterSlug: string }) {
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [paras, setParas] = useState<HTMLElement[]>([])
   const [active, setActive] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const on = useReaderPrefs().prefs.marginComments
 
   const load = useCallback(async () => {
     const r = await api<{ counts: Record<string, number> }>(
@@ -25,22 +28,24 @@ export function ParagraphComments({ publicPath, chapterSlug }: { publicPath: str
   }, [publicPath, chapterSlug])
 
   useEffect(() => {
+    if (!on) return setParas([])
     void load()
     setParas([...document.querySelectorAll<HTMLElement>('.reading-body p[data-block]')])
-  }, [load])
+  }, [load, on])
 
   // A tap (or click) on a paragraph's text offers "Comment" beside it; selecting text doesn't count as a tap.
   useEffect(() => {
-    const on = (e: MouseEvent) => {
+    if (!on) return setActive(null)
+    const tap = (e: MouseEvent) => {
       if (window.getSelection()?.toString()) return
       const target = e.target as HTMLElement
       if (target.closest('a, button')) return
       const p = target.closest<HTMLElement>('.reading-body p[data-block]')
       setActive(p?.dataset.block ?? null)
     }
-    document.addEventListener('click', on)
-    return () => document.removeEventListener('click', on)
-  }, [])
+    document.addEventListener('click', tap)
+    return () => document.removeEventListener('click', tap)
+  }, [on])
 
   const quote = open ? (paras.find((p) => p.dataset.block === open)?.textContent?.trim() ?? '') : ''
 
