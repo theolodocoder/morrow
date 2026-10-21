@@ -37,6 +37,7 @@ export function WorkCredits({ credits }: { credits: PublicCredit[] }) {
             >
               {p.username ? (
                 <Link
+                  prefetch={false}
                   href={routes.author(p.username)}
                   className="inline-flex min-w-0 items-center gap-2.5 rounded-full pr-1 hover:underline"
                 >

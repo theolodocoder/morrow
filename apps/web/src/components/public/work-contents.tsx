@@ -36,6 +36,7 @@ export function WorkContents({
           return (
             <li key={c.slug} className="border-b border-subtle">
               <Link
+                prefetch={false}
                 href={routes.readChapter(publicPath, c.slug)}
                 className="press flex items-baseline gap-3 rounded-sm py-3 transition-colors hover:bg-hover"
               >
@@ -59,6 +60,7 @@ export function WorkContents({
                   {forks.map((v) => (
                     <li key={v.slug}>
                       <Link
+                        prefetch={false}
                         href={routes.readChapter(publicPath, v.chapters[0]!.slug)}
                         className="block rounded-sm py-1 pl-9 font-ui text-[13px] text-secondary transition-colors hover:text-primary hover:underline"
                       >

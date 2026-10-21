@@ -79,6 +79,7 @@ function Lead({ w, label }: { w: DiscoveryWork; label: React.ReactNode }) {
         ))}
       </svg>
       <Link
+        prefetch={false}
         href={routes.publicWork(w.publicPath)}
         tabIndex={-1}
         aria-hidden="true"
@@ -89,7 +90,7 @@ function Lead({ w, label }: { w: DiscoveryWork; label: React.ReactNode }) {
       <div className="relative flex flex-col items-start gap-3">
         <p className={`${kicker} text-accent`}>{label}</p>
         <h3 id="lead-title" className="font-display text-[30px] leading-[1.08] text-primary sm:text-[40px]">
-          <Link href={routes.publicWork(w.publicPath)} className="hover:underline">
+          <Link prefetch={false} href={routes.publicWork(w.publicPath)} className="hover:underline">
             {w.title}
           </Link>
         </h3>
@@ -117,6 +118,7 @@ function Lead({ w, label }: { w: DiscoveryWork; label: React.ReactNode }) {
           {readingMinutes(w.wordCount)} min read
         </p>
         <Link
+          prefetch={false}
           href={routes.publicWork(w.publicPath)}
           className="press mt-1 inline-flex h-10 items-center rounded-full bg-action px-5 font-medium text-action-fg outline-none hover:bg-action-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2"
         >
@@ -133,7 +135,11 @@ function Ranked({ works }: { works: DiscoveryWork[] }) {
     <ol className="flex flex-col divide-y divide-subtle">
       {works.map((w, i) => (
         <li key={w.publicPath}>
-          <Link href={routes.publicWork(w.publicPath)} className="lift group flex items-center gap-4 py-3">
+          <Link
+            prefetch={false}
+            href={routes.publicWork(w.publicPath)}
+            className="lift group flex items-center gap-4 py-3"
+          >
             <span
               aria-hidden="true"
               className="w-9 shrink-0 font-display text-[30px] leading-none text-tertiary transition-colors group-hover:text-accent"

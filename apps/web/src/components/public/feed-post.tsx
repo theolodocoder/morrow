@@ -106,6 +106,7 @@ export function FeedPost({
       <header className="flex items-center gap-3">
         {author.username ? (
           <Link
+            prefetch={false}
             href={routes.author(author.username)}
             className="relative z-10 shrink-0 rounded-full"
             tabIndex={-1}
@@ -132,6 +133,7 @@ export function FeedPost({
           <p className="truncate text-[14px] text-primary">
             {author.username ? (
               <Link
+                prefetch={false}
                 href={routes.author(author.username)}
                 className="relative z-10 font-semibold hover:underline"
               >
@@ -204,6 +206,7 @@ export function FeedPost({
           <div className="min-w-0 flex-1">
             {/* The whole card opens the piece; the links and buttons on it stay their own targets. */}
             <Link
+              prefetch={false}
               href={href}
               className="group block rounded-sm outline-none after:absolute after:inset-0 focus-visible:ring-2 focus-visible:ring-focus"
             >
@@ -241,6 +244,7 @@ export function FeedPost({
             {likes > 0 && compact(likes)}
           </button>
           <Link
+            prefetch={false}
             href={`${href}#comments`}
             aria-label={`${item.comments} ${item.comments === 1 ? 'comment' : 'comments'}`}
             className={action}

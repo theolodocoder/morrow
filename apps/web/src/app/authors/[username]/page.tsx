@@ -165,7 +165,11 @@ export default async function AuthorPage({ params }: Params) {
             <ul className="divide-y divide-subtle border-y border-subtle">
               {a.works.map((w) => (
                 <li key={w.publicPath}>
-                  <Link href={routes.publicWork(w.publicPath)} className="block py-4 hover:bg-hover">
+                  <Link
+                    prefetch={false}
+                    href={routes.publicWork(w.publicPath)}
+                    className="block py-4 hover:bg-hover"
+                  >
                     <p className="font-manuscript text-[19px] text-primary">{w.title}</p>
                     <p className="text-[13px] text-secondary">
                       {labelOf(CATEGORY_OPTIONS, w.category)} · {w.wordCount.toLocaleString('en')} words
@@ -191,7 +195,11 @@ export default async function AuthorPage({ params }: Params) {
             <ul className="divide-y divide-subtle border-y border-subtle">
               {a.collaborations.map((w) => (
                 <li key={w.publicPath}>
-                  <Link href={routes.publicWork(w.publicPath)} className="block py-4 hover:bg-hover">
+                  <Link
+                    prefetch={false}
+                    href={routes.publicWork(w.publicPath)}
+                    className="block py-4 hover:bg-hover"
+                  >
                     <p className="font-manuscript text-[19px] text-primary">{w.title}</p>
                     <p className="text-[13px] text-secondary">
                       {labelOf(CATEGORY_OPTIONS, w.category)} · {w.wordCount.toLocaleString('en')} words

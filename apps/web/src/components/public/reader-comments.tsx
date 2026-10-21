@@ -104,7 +104,11 @@ function CommentBody({
 }) {
   if (c.removed) return <p className="py-1 text-[14px] italic text-tertiary">This comment was removed.</p>
   const name = c.author.username ? (
-    <Link href={routes.author(c.author.username)} className="font-medium text-primary hover:underline">
+    <Link
+      prefetch={false}
+      href={routes.author(c.author.username)}
+      className="font-medium text-primary hover:underline"
+    >
       {c.author.displayName}
     </Link>
   ) : (

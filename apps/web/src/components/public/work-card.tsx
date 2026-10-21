@@ -22,7 +22,11 @@ export function WorkCard({ w, layout = 'card' }: { w: DiscoveryWork; layout?: 'c
   )
   if (layout === 'row')
     return (
-      <Link href={routes.publicWork(w.publicPath)} className="lift flex gap-4 py-4 hover:bg-hover">
+      <Link
+        prefetch={false}
+        href={routes.publicWork(w.publicPath)}
+        className="lift flex gap-4 py-4 hover:bg-hover"
+      >
         <WorkCover cover={w.cover} title={w.title} />
         <div className="min-w-0 flex-1">
           <p className="font-manuscript text-[18px] leading-snug text-primary">{w.title}</p>
@@ -33,6 +37,7 @@ export function WorkCard({ w, layout = 'card' }: { w: DiscoveryWork; layout?: 'c
     )
   return (
     <Link
+      prefetch={false}
       href={routes.publicWork(w.publicPath)}
       className="lift group flex w-[156px] shrink-0 flex-col sm:w-[180px]"
     >
