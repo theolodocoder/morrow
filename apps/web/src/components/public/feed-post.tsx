@@ -101,7 +101,7 @@ export function FeedPost({
     <article
       aria-labelledby={titleId}
       data-public-path={item.publicPath}
-      className="feed-post lift relative px-4 py-5 transition-colors hover:bg-[color-mix(in_srgb,var(--bg-hover)_45%,transparent)] sm:px-6"
+      className="feed-post lift relative isolate px-4 py-5 transition-colors hover:bg-[color-mix(in_srgb,var(--bg-hover)_45%,transparent)] sm:px-6"
     >
       <header className="flex items-center gap-3">
         {author.username ? (

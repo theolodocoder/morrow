@@ -3,7 +3,6 @@ import { EmptyState } from '@/components/brand/spots'
 import type { WORK_CATEGORIES } from '@morrow/contracts'
 import { type Feed, type WeeklyPrompt } from '@morrow/contracts'
 import { Shell } from '@/components/shell/shell'
-import { HomeHero } from '@/components/public/home-hero'
 import { FeedList } from '@/components/public/feed-list'
 import { FeedFilters } from '@/components/public/feed-filters'
 import { PullToRefresh } from '@/components/public/pull-to-refresh'
@@ -93,16 +92,9 @@ export default async function Home({ searchParams }: Params) {
           Your account has been deleted. Thank you for writing with us.
         </p>
       )}
-      {!me && <HomeHero />}
       <div className="mx-auto grid gap-8 pb-24 sm:px-6 max-w-[1040px] xl:grid-cols-[minmax(0,640px)_300px] xl:justify-center">
         <main id="main" className="mx-auto w-full min-w-0 max-w-[640px] xl:mx-0">
-          {me ? (
-            <h1 className="sr-only">Feed</h1>
-          ) : (
-            <h2 id="feed" className="sr-only">
-              Feed
-            </h2>
-          )}
+          <h1 className="sr-only">Feed</h1>
           {/* Sticky so the filters stay one tap away while scrolling. */}
           <div
             className={`sticky top-14 z-10 border-b border-subtle bg-app/95 pt-4 backdrop-blur-sm ${me ? 'md:top-0' : ''}`}
@@ -150,7 +142,11 @@ export default async function Home({ searchParams }: Params) {
             />
           </div>
         </main>
-        <aside aria-label="About Morrow" className="hidden flex-col gap-4 pt-6 xl:flex">
+        <aside
+          aria-label="About Morrow"
+          // Stays in view while the feed scrolls; below the signed-out header, flush to the top when signed in.
+          className={`hidden flex-col gap-4 self-start pt-6 xl:sticky xl:flex ${me ? 'xl:top-0' : 'xl:top-14'}`}
+        >
           {prompt && <PromptCard p={prompt} signedIn={!!me} />}
           {!me && (
             <div className="rounded-lg border border-subtle bg-canvas p-5">
