@@ -1,0 +1,1 @@
+CREATE INDEX "bookmarks_work_time_idx" ON "bookmarks" USING btree ("work_id","created_at");

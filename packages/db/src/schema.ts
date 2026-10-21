@@ -871,7 +871,11 @@ export const bookmarks = pgTable(
       .references(() => works.id),
     createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.workId] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.workId] }),
+    // Discover's trending shelf and the dashboard count a work's saves; without this each count scans every bookmark.
+    index('bookmarks_work_time_idx').on(t.workId, t.createdAt),
+  ],
 )
 
 /** Editorial picks for discovery (FR-020), kept apart from algorithmic ranking and labelled as such. */
