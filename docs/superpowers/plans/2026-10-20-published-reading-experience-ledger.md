@@ -7,29 +7,30 @@ Ruling: local commits on feat/reading-experience only, no push, no AI trailers �
 
 ## Pre-flight scan
 
-| Pair / task | Produces → consumes | Finding |
-|---|---|---|
-| T2 → T4 | `chapterCredits` → alternates credits | ok (T2 first) |
-| T3 → T5 | `openingLine` → alternates firstChapter.opening | ok |
-| T4 → T5 | `liveAlternates` → public versions | ok |
-| T5 ↔ T6 | both edit social.ts; T5 changes `publishedChapterId`, T6 uses it | ok (sequential) |
-| T2/T3/T4/T5 | all edit publishing.ts + contracts | ok (sequential) |
-| T2/T4/T12 | each adds a migration via `generate` | ok (sequential numbering) |
-| T6 → T10 | `quote`, chapter list → ChapterDiscussion | ok |
-| T7 → T8/T9/T12 | domain `reading.ts` grows: sectionLabel/minutesFor → minutesLeft → mergePositions | ok |
-| T8 → T10 | `useReaderPrefs().marginComments` | ok |
-| T11 ← T12 | T11 consumes reading positions produced by T12, but T12 is ordered after T11 | **conflict** |
-| T4 | test "collaborator → 404" vs existing `requireWork` (members lacking a capability get 403, non-members 404) | **conflict** |
-| T9/T10/T11/T13 | UI tasks specify browser verification + axe, no unit tests | noted |
-| T1 | contrast test + CSS emission; self-consistent | ok |
-| T2 | stored credits + "session after publish doesn't change credits" test consistent | ok |
-| T3, T5, T6, T7, T8, T12, T14 | tests match specified code/files | ok |
+| Pair / task                  | Produces → consumes                                                                                         | Finding                   |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------- |
+| T2 → T4                      | `chapterCredits` → alternates credits                                                                       | ok (T2 first)             |
+| T3 → T5                      | `openingLine` → alternates firstChapter.opening                                                             | ok                        |
+| T4 → T5                      | `liveAlternates` → public versions                                                                          | ok                        |
+| T5 ↔ T6                      | both edit social.ts; T5 changes `publishedChapterId`, T6 uses it                                            | ok (sequential)           |
+| T2/T3/T4/T5                  | all edit publishing.ts + contracts                                                                          | ok (sequential)           |
+| T2/T4/T12                    | each adds a migration via `generate`                                                                        | ok (sequential numbering) |
+| T6 → T10                     | `quote`, chapter list → ChapterDiscussion                                                                   | ok                        |
+| T7 → T8/T9/T12               | domain `reading.ts` grows: sectionLabel/minutesFor → minutesLeft → mergePositions                           | ok                        |
+| T8 → T10                     | `useReaderPrefs().marginComments`                                                                           | ok                        |
+| T11 ← T12                    | T11 consumes reading positions produced by T12, but T12 is ordered after T11                                | **conflict**              |
+| T4                           | test "collaborator → 404" vs existing `requireWork` (members lacking a capability get 403, non-members 404) | **conflict**              |
+| T9/T10/T11/T13               | UI tasks specify browser verification + axe, no unit tests                                                  | noted                     |
+| T1                           | contrast test + CSS emission; self-consistent                                                               | ok                        |
+| T2                           | stored credits + "session after publish doesn't change credits" test consistent                             | ok                        |
+| T3, T5, T6, T7, T8, T12, T14 | tests match specified code/files                                                                            | ok                        |
 
 Ruling: run Task 12 before Task 11 — T11 consumes T12's positions API and hook — cost if wrong: none (order only).
 Ruling: T4 permission tests assert the existing `requireWork` behaviour (member without `work.publish` → 403, non-member → 404) rather than "404" — consistency with every existing route beats the plan's wording; CLAUDE.md's "forbidden → 404" is already implemented this way repo-wide — cost if wrong: one status code to flip.
 Ruling: UI tasks (9, 10, 11, 13) are verified in the browser pane + axe and covered by Task 14's e2e journey; no unit-test harness is added to apps/web — cost if wrong: a UI regression is caught at T14 rather than per task.
 
 ## Progress
+
 Task 1: dispatched (base 6d8c85c, implementer ad17c39998010af77, sonnet)
 Task 1: implemented 3ecd638 (DONE_WITH_CONCERNS: @theme→@theme inline; mobile.spec editor-section timeout not chased); review dispatched a4e4ca116f0cf2bab
 Task 1: ⚠️ resolved — mobile.spec fails at the editor's phone toolbar because the Next dev-overlay portal intercepts the click (server runs `next dev` since this morning; suite was written for `next start`), not Task 1. Ruling: waive the mobile.spec gate for T1; run T14's e2e (incl. mobile/reading settings) against a production build (`next build && next start`) — cost if wrong: a tone regression in the Aa popover surfaces at T14.

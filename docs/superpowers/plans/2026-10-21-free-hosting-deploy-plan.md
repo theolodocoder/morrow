@@ -12,18 +12,19 @@ Morrow's live-editing service (`apps/collab`) keeps long-lived WebSocket connect
 
 One Ampere A1 VM (2 OCPU / 12 GB RAM, 100 GB disk, 10 TB/month egress) running everything with Docker Compose:
 
-| Container | Role | Public? |
-|---|---|---|
-| Caddy | HTTPS (automatic Let's Encrypt), routes `morrow.<domain>` → web, `collab.<domain>` → collab (WebSockets proxied automatically) | ports 80/443 only |
-| web | `next build` / `next start` | via Caddy |
-| api | Fastify (`node --import tsx src/main.ts`) | internal only |
-| collab | Hocuspocus | via Caddy (`wss://collab.<domain>`) |
-| postgres:18 | database, persistent volume | internal only |
-| migrate | one-shot `pnpm --filter @morrow/db migrate` before api starts | — |
+| Container   | Role                                                                                                                           | Public?                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------- |
+| Caddy       | HTTPS (automatic Let's Encrypt), routes `morrow.<domain>` → web, `collab.<domain>` → collab (WebSockets proxied automatically) | ports 80/443 only                   |
+| web         | `next build` / `next start`                                                                                                    | via Caddy                           |
+| api         | Fastify (`node --import tsx src/main.ts`)                                                                                      | internal only                       |
+| collab      | Hocuspocus                                                                                                                     | via Caddy (`wss://collab.<domain>`) |
+| postgres:18 | database, persistent volume                                                                                                    | internal only                       |
+| migrate     | one-shot `pnpm --filter @morrow/db migrate` before api starts                                                                  | —                                   |
 
 Rough ceiling before paying [J, untested — confirm with the repo's load-test]: ~50–150 simultaneous editors and a few hundred concurrent readers on 2 OCPU; one document is capped at 200 live connections; voice rooms ≤ 8 speakers (mesh).
 
 **Risks you accept on this plan**
+
 - Oracle needs a real credit/debit card at sign-up (prepaid/virtual cards rejected) but charges nothing on Always Free.
 - Oracle halved the free A1 allowance in 2026 without notice; it can change again.
 - Oracle may reclaim an idle VM (CPU, network and memory all < 20% for 7 days) and close accounts unused for 30 days — real traffic avoids this.
@@ -32,6 +33,7 @@ Rough ceiling before paying [J, untested — confirm with the repo's load-test]:
 - You run Postgres yourself: backups and upgrades are on us.
 
 **Other free services used**
+
 - **Cloudflare (free):** DNS; R2 object storage (10 GB free) for nightly database backups; TURN for voice rooms (first 1,000 GB free per their docs). Keep the `collab` DNS record "DNS only" (grey cloud) so Cloudflare's proxy doesn't time out idle WebSockets.
 - **Resend (free):** 3,000 emails/month, 100/day — needs a domain you control to verify.
 - **Uptime monitoring:** UptimeRobot / StatusCake / Better Stack free tiers (check each one's commercial-use terms).
@@ -63,15 +65,18 @@ Rough ceiling before paying [J, untested — confirm with the repo's load-test]:
 6. Turn on backups and uptime checks (web `/`, API health, a WebSocket check on collab). Add a disk-usage alert.
 
 ## When we outgrow free (in order)
+
 1. A second small paid server or managed Postgres with point-in-time recovery (removes the single point of failure).
 2. Cloudflare in front of web (caching, DDoS) — free, once caching rules are set.
 3. Redis (Upstash) when collab runs on several instances (live fan-out) and for shared rate limits.
 4. A media server (e.g. LiveKit) if voice rooms need more than 8 speakers.
 
 ## Owner decisions (2026-10-21)
+
 - Morrow is **non-commercial for now** — Vercel Hobby stays allowed as a fallback for the web app (alternative B) if the VM becomes the bottleneck. Revisit when anything earns money.
 - **No purchases at all** — use a free domain (DigitalPlat now, eu.org applied for in parallel). Morrow will be posted publicly for people to try (non-commercial showcase).
 - **Yes** to putting a card on the Oracle account (Always Free charges nothing).
 
 ## Sources
+
 Oracle Always Free: docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm; allowance cut: infoq.com/news/2026/07/oracle-cloud-free-tier-limits/, linuxiac.com (Oracle quietly cuts free tier Ampere A1). Render: render.com/docs/free. Koyeb: koyeb.com/docs/reference/instances, koyeb.com/blog (Feb 2026 sign-up change). Fly.io: docs.fly.io/about/pricing. Railway: docs.railway.com/reference/pricing/free-trial. Google Cloud: docs.cloud.google.com/free/docs/free-cloud-features, …/run/docs/triggering/websockets. Cloudflare: developers.cloudflare.com/workers/platform/limits, /containers/pricing, /durable-objects/platform/pricing, /realtime/turn/faq, /r2/pricing, /network/websockets. Vercel: vercel.com/docs/plans/hobby, /limits/fair-use-guidelines, /limits/overview. Netlify: netlify.com/changelog (credit-based plans). Neon: neon.com/faqs/free-plan-limits-and-quotas. Supabase: supabase.com/pricing. Aiven: aiven.io/docs/platform/concepts/free-plan. Upstash: upstash.com/pricing/redis. Metered: metered.ca/pricing. Resend: resend.com/pricing. Uptime monitors: check each provider's terms.
