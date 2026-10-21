@@ -127,7 +127,11 @@ export default async function PublicWorkPage({ params }: Params) {
               Start reading
             </Link>
           )}
-          <ContinueReading publicPath={w.publicPath} chapters={w.chapters} />
+          <ContinueReading
+            publicPath={w.publicPath}
+            // versions' chapters too: a place in one is still a place to continue from
+            chapters={[...w.chapters, ...w.versions.flatMap((v) => v.chapters)]}
+          />
           {w.classic ? (
             <RetellButton publicPath={w.publicPath} />
           ) : w.openAccess ? (

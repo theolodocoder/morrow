@@ -79,3 +79,30 @@ export function creditLine(names: readonly string[]): string {
   const tail = more > 0 ? [...shown, `${more} ${more === 1 ? 'other' : 'others'}`] : shown
   return `${author}, with ${tail.slice(0, -1).join(', ')}${tail.length > 1 ? ' and ' : ''}${tail.at(-1)}`
 }
+
+/** Where a reader got to in one chapter (spec call 6): the furthest paragraph reached and how far through, 0..100. */
+export type Position = { chapterSlug: string; blockId: string | null; percent: number }
+
+/** One saved position, or null for anything else: device storage is old, hand-edited or from an earlier format. */
+function clean(x: unknown): Position | null {
+  if (!x || typeof x !== 'object') return null
+  const { chapterSlug, blockId, percent } = x as Record<string, unknown>
+  if (typeof chapterSlug !== 'string' || typeof percent !== 'number' || !Number.isFinite(percent)) return null
+  return {
+    chapterSlug,
+    blockId: typeof blockId === 'string' ? blockId : null,
+    percent: Math.round(Math.min(100, Math.max(0, percent))),
+  }
+}
+
+/**
+ * The device's and the account's positions as one list in reading order: the furthest point wins per chapter (the
+ * account's on a tie). Chapters no longer published (removed, or renamed so the slug changed) are dropped.
+ */
+export function mergePositions(local: Position[], server: Position[], liveSlugs: string[]): Position[] {
+  const best = new Map<string, Position>()
+  for (const list of [server, local])
+    for (const p of (Array.isArray(list) ? list : []).map(clean))
+      if (p && p.percent > (best.get(p.chapterSlug)?.percent ?? -1)) best.set(p.chapterSlug, p)
+  return liveSlugs.flatMap((s) => best.get(s) ?? [])
+}

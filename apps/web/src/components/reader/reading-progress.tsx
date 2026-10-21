@@ -1,17 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { loadReadingPositions, useReadingPosition } from './use-reading-position'
 
-const key = (publicPath: string) => `morrow:reading:${publicPath}`
-
-/** A hairline that fills as the reader moves through the chapter; remembers the chapter for "continue reading". */
+/** A hairline that fills as the reader moves through the chapter; remembers the paragraph for "continue reading". */
 export function ReadingProgress({ publicPath, chapterSlug }: { publicPath: string; chapterSlug: string }) {
   const [progress, setProgress] = useState(0)
+  useReadingPosition(publicPath, chapterSlug)
   useEffect(() => {
-    try {
-      localStorage.setItem(key(publicPath), chapterSlug)
-    } catch {
-      /* storage unavailable: progress is a convenience */
-    }
     const onScroll = () => {
       const max = document.documentElement.scrollHeight - window.innerHeight
       setProgress(max > 0 ? Math.min(1, window.scrollY / max) : 1)
@@ -41,11 +36,13 @@ export function ContinueReading({
 }) {
   const [last, setLast] = useState<{ slug: string; title: string } | null>(null)
   useEffect(() => {
-    try {
-      const slug = localStorage.getItem(key(publicPath))
-      setLast(chapters.find((c) => c.slug === slug) ?? null)
-    } catch {
-      /* ignore */
+    let alive = true
+    void loadReadingPositions(
+      publicPath,
+      chapters.map((c) => c.slug),
+    ).then(({ last }) => alive && setLast(chapters.find((c) => c.slug === last) ?? null))
+    return () => {
+      alive = false
     }
   }, [publicPath, chapters])
   if (!last) return null

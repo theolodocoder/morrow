@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { creditLine, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
+import { creditLine, mergePositions, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
 
 describe('sectionLabel', () => {
   it('names fiction chapters in words', () => {
@@ -61,5 +61,46 @@ describe('creditLine', () => {
   it('counts the rest past three', () => {
     expect(creditLine(['Ama', 'Tolu', 'Kemi', 'Ife'])).toBe('Ama, with Tolu, Kemi and 1 other')
     expect(creditLine(['Ama', 'Tolu', 'Kemi', 'Ife', 'Bayo'])).toBe('Ama, with Tolu, Kemi and 2 others')
+  })
+})
+
+describe('mergePositions', () => {
+  const live = ['one-aaaaaa', 'two-bbbbbb', 'three-cccccc']
+  it('furthest wins per chapter, in reading order', () => {
+    const local = [
+      { chapterSlug: 'two-bbbbbb', blockId: 'b9', percent: 80 },
+      { chapterSlug: 'one-aaaaaa', blockId: 'a2', percent: 10 },
+    ]
+    const server = [
+      { chapterSlug: 'one-aaaaaa', blockId: 'a7', percent: 60 },
+      { chapterSlug: 'two-bbbbbb', blockId: 'b1', percent: 5 },
+      { chapterSlug: 'three-cccccc', blockId: null, percent: 0 },
+    ]
+    expect(mergePositions(local, server, live)).toEqual([
+      { chapterSlug: 'one-aaaaaa', blockId: 'a7', percent: 60 },
+      { chapterSlug: 'two-bbbbbb', blockId: 'b9', percent: 80 },
+      { chapterSlug: 'three-cccccc', blockId: null, percent: 0 },
+    ])
+  })
+  it('stale localStorage entry for a removed chapter is dropped', () => {
+    const local = [
+      { chapterSlug: 'gone-zzzzzz', blockId: 'z1', percent: 90 },
+      { chapterSlug: 'one-aaaaaa', blockId: 'a1', percent: 20 },
+    ]
+    expect(mergePositions(local, [], live)).toEqual([
+      { chapterSlug: 'one-aaaaaa', blockId: 'a1', percent: 20 },
+    ])
+  })
+  it('ignores malformed device entries instead of throwing', () => {
+    const junk = [
+      null,
+      'x',
+      { chapterSlug: 'one-aaaaaa', percent: 'lots' },
+      { chapterSlug: 'two-bbbbbb', blockId: 4, percent: 140 },
+    ]
+    expect(mergePositions(junk as never, [], live)).toEqual([
+      { chapterSlug: 'two-bbbbbb', blockId: null, percent: 100 },
+    ])
+    expect(mergePositions('nonsense' as never, [], live)).toEqual([])
   })
 })
