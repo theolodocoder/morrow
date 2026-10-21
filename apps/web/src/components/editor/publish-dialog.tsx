@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AlternateStatus, Branch, Chapter, PublicationStatus, Work } from '@morrow/contracts'
+import type { AlternateStatus, Branch, Chapter, PublicationStatus, PublicWork, Work } from '@morrow/contracts'
 import { Checkbox } from 'react-aria-components'
 import { Button } from '@/components/ui/button'
 import { ChoiceGroup, SelectField } from '@/components/ui/choice'
@@ -94,7 +94,8 @@ export function PublishDialog({
       isOpen={isOpen}
       onOpenChange={onOpenChange}
     >
-      <div className="flex flex-col gap-5">
+      {/* the shared dialog doesn't scroll, and the versions list can outgrow a short window */}
+      <div className="-mx-1 flex max-h-[calc(100dvh-9rem)] flex-col gap-5 overflow-y-auto px-1">
         {error && <InlineAlert>{error}</InlineAlert>}
 
         {live && (
@@ -161,7 +162,12 @@ export function PublishDialog({
         )}
 
         {live && work.capabilities.includes('work.publish') && (
-          <AlternateVersions workId={work.id} mainBranchName={status.branchName} />
+          <AlternateVersions
+            workId={work.id}
+            publicPath={status.publicPath}
+            mainBranchName={status.branchName}
+            publishedAt={status.publishedAt}
+          />
         )}
 
         {!confirming ? (
@@ -221,26 +227,57 @@ export function PublishDialog({
  * The API judges eligibility; here we only explain what is already knowable from the branch list, and show the
  * server's own words when it refuses.
  */
-function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBranchName: string | null }) {
-  const [rows, setRows] = useState<{ alt: AlternateStatus; branch: Branch }[] | null>(null)
-  const [mainChapters, setMainChapters] = useState<Chapter[]>([])
+type VersionRow = { alt: AlternateStatus; branch: Branch }
+
+function AlternateVersions({
+  workId,
+  publicPath,
+  mainBranchName,
+  publishedAt,
+}: {
+  workId: string
+  publicPath: string
+  mainBranchName: string | null
+  /** changes when main is republished, which changes what a version can start from */
+  publishedAt: string | null
+}) {
+  const [rows, setRows] = useState<VersionRow[] | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [startChapters, setStartChapters] = useState<Chapter[]>([])
   const [mainId, setMainId] = useState<string | null>(null)
   const [pick, setPick] = useState<Record<string, string>>({})
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let stale = false
+    setFailed(false)
     void (async () => {
       try {
-        const [{ items: alts }, { items: branches }] = await Promise.all([
+        const [{ items: alts }, { items: branches }, live] = await Promise.all([
           api<{ items: AlternateStatus[] }>(`/works/${workId}/alternates`),
           api<{ items: Branch[] }>(`/works/${workId}/branches`),
+          api<PublicWork>(`/public/works/${publicPath}`),
         ])
-        // Which branch readers get as main: known only when its name is unambiguous.
+        // Which branch readers get as main. A null name means the default branch (the publish response omits it);
+        // otherwise only an unambiguous name identifies it.
         const named = branches.filter((b) => b.name === mainBranchName)
-        setMainId(named.length === 1 ? named[0]!.id : null)
-        const main = named.length === 1 ? named[0]! : branches.find((b) => b.isDefault)
-        if (main) setMainChapters((await api<{ items: Chapter[] }>(`/branches/${main.id}/chapters`)).items)
+        const main =
+          mainBranchName === null
+            ? branches.find((b) => b.isDefault)
+            : named.length === 1
+              ? named[0]
+              : undefined
+        const draft = main ? (await api<{ items: Chapter[] }>(`/branches/${main.id}/chapters`)).items : []
+        // A version may only start from a chapter in main's live publication, after its first. Slugs end with the
+        // last six characters of the chapter id, which links the published rows back to the draft ones.
+        const starts = live.chapters.slice(1).flatMap((p) => {
+          const c = draft.find((d) => d.id.endsWith(p.slug.slice(-6)))
+          return c ? [c] : []
+        })
+        if (stale) return
+        setMainId(main?.id ?? null)
+        setStartChapters(starts)
         setRows(
           alts.flatMap((alt) => {
             const branch = branches.find((b) => b.id === alt.branchId)
@@ -248,14 +285,15 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
           }),
         )
       } catch {
-        setRows([])
+        if (!stale) setFailed(true)
       }
     })()
-  }, [workId, mainBranchName])
+    return () => {
+      stale = true
+    }
+  }, [workId, publicPath, mainBranchName, publishedAt])
 
-  if (!rows?.length) return null
-
-  const act = async ({ alt, branch }: (typeof rows)[number]) => {
+  const act = async ({ alt, branch }: VersionRow) => {
     const unpublish = alt.published
     setBusyId(alt.branchId)
     setError(null)
@@ -269,7 +307,7 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
         },
       )
       // the server records the owner's pick as the branch's divergence, so republishing asks nothing more
-      const picked = mainChapters.find((c) => c.id === pick[alt.branchId])?.title ?? null
+      const picked = startChapters.find((c) => c.id === pick[alt.branchId])?.title ?? null
       setRows(
         (rs) =>
           rs?.map((r) =>
@@ -295,6 +333,8 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
     }
   }
 
+  if (!failed && !rows?.length) return null
+
   return (
     <section aria-labelledby="alt-versions" className="flex flex-col gap-2 border-t border-subtle pt-4">
       <h3 id="alt-versions" className="text-sm font-medium text-primary">
@@ -304,9 +344,13 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
         Readers can choose a version at the end of the chapter before it differs. It sits beside the main
         story, never instead of it.
       </p>
-      {error && <InlineAlert>{error}</InlineAlert>}
+      {(failed || error) && (
+        <InlineAlert>
+          {failed ? 'Couldn’t load your versions. Close this and open it again to retry.' : error}
+        </InlineAlert>
+      )}
       <ul className="flex flex-col gap-2">
-        {rows.map((r) => {
+        {(rows ?? []).map((r) => {
           const { alt, branch } = r
           const unseen = !alt.published && mainId !== null && branch.parentBranchId !== mainId
           const needsPick = !alt.published && !unseen && !branch.divergesAtChapterTitle
@@ -331,6 +375,9 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
                     size="sm"
                     variant={alt.published ? 'quiet' : 'secondary'}
                     isDisabled={busyId !== null || (needsPick && !pick[alt.branchId])}
+                    aria-describedby={
+                      needsPick && !pick[alt.branchId] ? `alt-hint-${alt.branchId}` : undefined
+                    }
                     onPress={() => void act(r)}
                   >
                     {alt.published ? 'Unpublish' : 'Publish version'}
@@ -338,12 +385,23 @@ function AlternateVersions({ workId, mainBranchName }: { workId: string; mainBra
                 )}
               </div>
               {needsPick && (
-                <SelectField
-                  label={`First chapter of “${alt.name}” that differs from the main story`}
-                  value={pick[alt.branchId] ?? ''}
-                  onChange={(v) => setPick((p) => ({ ...p, [alt.branchId]: v }))}
-                  options={mainChapters.slice(1).map((c) => ({ id: c.id, label: c.title }))}
-                />
+                <>
+                  {startChapters.length > 0 && (
+                    <SelectField
+                      label={`First chapter of “${alt.name}” that differs from the main story`}
+                      value={pick[alt.branchId] ?? ''}
+                      onChange={(v) => setPick((p) => ({ ...p, [alt.branchId]: v }))}
+                      options={startChapters.map((c) => ({ id: c.id, label: c.title }))}
+                    />
+                  )}
+                  {!pick[alt.branchId] && (
+                    <p id={`alt-hint-${alt.branchId}`} className="text-[12px] text-tertiary">
+                      {startChapters.length > 0
+                        ? 'Choose where this version differs to publish it.'
+                        : 'The main story needs a second published chapter before a version can branch from it.'}
+                    </p>
+                  )}
+                </>
               )}
             </li>
           )
