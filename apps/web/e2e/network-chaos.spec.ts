@@ -68,6 +68,7 @@ interface Writer {
 /**
  * The provider's reconnect backoff uses full jitter: each wait is random, up to 1, 2, 4 … 30 s. Pinning only that
  * random draw to its maximum makes every run see the worst case, so timing assertions can't pass or fail by luck.
+ * Dev server only: it matches the `defaultCalculateDelay` stack frame, a name a minified build renames.
  */
 function worstCaseBackoff() {
   const random = Math.random

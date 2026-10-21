@@ -65,6 +65,8 @@ export type VoiceMessage =
 const SAVING_DELAY_MS = 1000
 /** A slow or broken IndexedDB must never keep the writer from their chapter. */
 const DEVICE_LOAD_MAX_MS = 1500
+/** Another tab's mark change re-checks the device copy at most this often, so two tabs can't ping-pong the mark. */
+const CROSS_TAB_RECHECK_MS = 2000
 
 export function useCollab(documentId: string, collabUrl: string, me: PresenceUser): Collab | null {
   const [collab, setCollab] = useState<Omit<Collab, 'status' | 'synced' | 'readOnly'> | null>(null)
@@ -105,6 +107,8 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     }
     // The server has everything this tab sent, but y-indexeddb doesn't share between tabs: first take in what other
     // tabs left in the device copy. Anything new is sent (and re-marks); clear only when nothing new arrived.
+    let lastConfirm = 0,
+      recheckTimer: ReturnType<typeof setTimeout> | undefined
     let checking = false,
       // One try per state of the facts: if the mark can't be cleared (storage failing), don't retry in a loop.
       confirmTried = false
@@ -112,6 +116,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       const copy = local
       if (checking || !copy) return
       checking = confirmTried = true
+      lastConfirm = Date.now()
       try {
         await fetchUpdates(copy)
         if (copy === local && mode !== 'read' && serverSynced && unsynced === 0)
@@ -162,8 +167,16 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     const onMarks = (e: StorageEvent) => {
       if (e.key !== pendingKey(me.id)) return
       if (unsynced > 0 && onDevice && mode !== 'read') markPending()
-      confirmTried = false // another tab's words may be in the device copy now: look again
-      if (live) refresh()
+      // Another tab's words may be in the device copy now: look again, but not straight after the last look.
+      clearTimeout(recheckTimer)
+      recheckTimer = setTimeout(
+        () => {
+          confirmTried = false
+          if (live) refresh()
+        },
+        Math.max(0, lastConfirm + CROSS_TAB_RECHECK_MS - Date.now()),
+      )
+      if (live) refresh() // the label follows the mark straight away
     }
     window.addEventListener('storage', onMarks)
     // Without a device copy, unsent words live only in this tab: ask before it closes.
@@ -328,6 +341,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
     return () => {
       cancelled = true
       clearTimeout(savingTimer)
+      clearTimeout(recheckTimer)
       window.removeEventListener('offline', refresh)
       window.removeEventListener('online', online)
       window.removeEventListener('storage', onMarks)

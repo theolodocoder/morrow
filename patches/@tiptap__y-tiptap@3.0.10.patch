@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..49d23229fccfff8a8d2880d1c407e2549ac96731 100644
+index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..623d3ab98c47b8aa8f4f00c295579bbd5c91c298 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -627,6 +627,17 @@ const recoverSelectionEndpoint = (newDoc, oldDoc, oldAbs, resolved) => {
@@ -31,7 +31,7 @@ index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..49d23229fccfff8a8d2880d1c407e254
  			}
  			if (anchor === null) anchor = head;
  			if (head === null) head = anchor;
-@@ -910,6 +921,42 @@ const ytextTrans = (ytext) => {
+@@ -910,6 +921,45 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -56,25 +56,28 @@ index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..49d23229fccfff8a8d2880d1c407e254
 +	return null;
 +};
 +const diffAtCaret = (diff, a, b, caret) => {
-+	if (caret === null) return diff(a, b);
++	const plain = diff(a, b);
++	if (caret === null) return plain;
 +	let right = 0;
 +	while (right < a.length && right < b.length - caret && a[a.length - right - 1] === b[b.length - right - 1]) right++;
 +	let left = 0;
 +	while (left + right < a.length && left + right < b.length && a[left] === b[left]) left++;
-+	// Only when the change really sits at the caret; a command can change text away from it, and a split surrogate
-+	// pair is left to the plain diff, which handles it.
++	// Only when the change really sits at the caret, and only to choose between equally small diffs: a change away
++	// from the caret (a command) must not redo the untouched text after it. A split surrogate pair is left to the
++	// plain diff, which handles it.
 +	const split = left > 0 && /[\uD800-\uDBFF]/.test(a[left - 1]) || right > 0 && /[\uDC00-\uDFFF]/.test(a[a.length - right]);
-+	if (b.length - right !== caret || split) return diff(a, b);
++	const remove = a.length - left - right;
++	if (b.length - right !== caret || split || remove + (b.length - right - left) > plain.remove + plain.insert.length) return plain;
 +	return {
 +		index: left,
-+		remove: a.length - left - right,
++		remove,
 +		insert: b.slice(left, b.length - right)
 +	};
 +};
  const updateYText = (ytext, ptexts, meta) => {
  	meta.mapping.set(ytext, ptexts);
  	const { nAttrs, str } = ytextTrans(ytext);
-@@ -920,7 +967,7 @@ const updateYText = (ytext, ptexts, meta) => {
+@@ -920,7 +970,7 @@ const updateYText = (ytext, ptexts, meta) => {
  			attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
  		};
  	});
@@ -84,7 +87,7 @@ index d5fd6a2ed2f52041b092e75fe3380156919ca3d1..49d23229fccfff8a8d2880d1c407e254
  	ytext.insert(index, insert);
  	ytext.applyDelta(content.map((c) => ({
 diff --git a/dist/index.js b/dist/index.js
-index 50bcfe723ad3dd8b8c24c11d710f5607319fb8a8..00d68bf2aa0bf1095b8ce2e7e6fc0e2abea353be 100644
+index 50bcfe723ad3dd8b8c24c11d710f5607319fb8a8..0b1dcc3410da987805391d8398ae8ac2b314047d 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -594,6 +594,17 @@ const recoverSelectionEndpoint = (newDoc, oldDoc, oldAbs, resolved) => {
@@ -116,7 +119,7 @@ index 50bcfe723ad3dd8b8c24c11d710f5607319fb8a8..00d68bf2aa0bf1095b8ce2e7e6fc0e2a
  			}
  			if (anchor === null) anchor = head;
  			if (head === null) head = anchor;
-@@ -877,6 +888,42 @@ const ytextTrans = (ytext) => {
+@@ -877,6 +888,45 @@ const ytextTrans = (ytext) => {
  };
  //#endregion
  //#region src/lib/utils/reconciliation/updateYText.ts
@@ -141,25 +144,28 @@ index 50bcfe723ad3dd8b8c24c11d710f5607319fb8a8..00d68bf2aa0bf1095b8ce2e7e6fc0e2a
 +	return null;
 +};
 +const diffAtCaret = (diff, a, b, caret) => {
-+	if (caret === null) return diff(a, b);
++	const plain = diff(a, b);
++	if (caret === null) return plain;
 +	let right = 0;
 +	while (right < a.length && right < b.length - caret && a[a.length - right - 1] === b[b.length - right - 1]) right++;
 +	let left = 0;
 +	while (left + right < a.length && left + right < b.length && a[left] === b[left]) left++;
-+	// Only when the change really sits at the caret; a command can change text away from it, and a split surrogate
-+	// pair is left to the plain diff, which handles it.
++	// Only when the change really sits at the caret, and only to choose between equally small diffs: a change away
++	// from the caret (a command) must not redo the untouched text after it. A split surrogate pair is left to the
++	// plain diff, which handles it.
 +	const split = left > 0 && /[\uD800-\uDBFF]/.test(a[left - 1]) || right > 0 && /[\uDC00-\uDFFF]/.test(a[a.length - right]);
-+	if (b.length - right !== caret || split) return diff(a, b);
++	const remove = a.length - left - right;
++	if (b.length - right !== caret || split || remove + (b.length - right - left) > plain.remove + plain.insert.length) return plain;
 +	return {
 +		index: left,
-+		remove: a.length - left - right,
++		remove,
 +		insert: b.slice(left, b.length - right)
 +	};
 +};
  const updateYText = (ytext, ptexts, meta) => {
  	meta.mapping.set(ytext, ptexts);
  	const { nAttrs, str } = ytextTrans(ytext);
-@@ -887,7 +934,7 @@ const updateYText = (ytext, ptexts, meta) => {
+@@ -887,7 +937,7 @@ const updateYText = (ytext, ptexts, meta) => {
  			attributes: Object.assign({}, nAttrs, marksToAttributes(p.marks, meta))
  		};
  	});

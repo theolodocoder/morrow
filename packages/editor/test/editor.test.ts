@@ -377,6 +377,21 @@ describe('concurrent typing next to a deleted letter (R2-B1)', () => {
     b.e.destroy()
   })
 
+  it('a change away from the caret leaves the unchanged text after it alone', () => {
+    const [a, b] = pair('xab')
+    // A's caret sits at the end while something (a command, not typing) changes the "x": only the "x" may be redone,
+    // so B's concurrent delete of the "a" stays deleted.
+    a.e.commands.setTextSelection(1 + 'xab'.length)
+    a.e.view.dispatch(a.e.state.tr.insertText('y', 1, 2))
+    expect(a.e.getText()).toBe('yab')
+    b.e.commands.deleteRange({ from: 2, to: 3 })
+    merge(a.doc, b.doc)
+    expect(a.e.getText()).toBe('yb')
+    expect(b.e.getText()).toBe(a.e.getText())
+    a.e.destroy()
+    b.e.destroy()
+  })
+
   it('backspace deletes the letter before the caret, not its identical neighbour', () => {
     const [a, b] = pair('a ssx b')
     // A deletes the first "s" (caret after it); B, apart, deletes the second — together, both are gone.
