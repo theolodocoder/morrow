@@ -30,6 +30,12 @@ const PrefsContext = createContext<{ prefs: Prefs; set: (p: Partial<Prefs>) => v
 /** The reader's saved preferences, for anything rendered inside the frame (paragraph markers, last-read storage). */
 export const useReaderPrefs = () => useContext(PrefsContext)
 
+const INTERACTIVE =
+  'a, button, input, textarea, select, summary, label, [role=button], [role=switch], [role=dialog]'
+function isInteractive(el: EventTarget | null) {
+  return el instanceof Element && !!el.closest(INTERACTIVE)
+}
+
 /** True while typing or choosing in a control, where arrow keys belong to that control, not to chapter paging. */
 function inField(el: EventTarget | null) {
   return (
@@ -91,10 +97,7 @@ export function ReaderFrame({
   // Out of the way while reading down; back as soon as you scroll up.
   useEffect(() => {
     let last = window.scrollY
-    const on = () => {
-      const y = window.scrollY
-      setHidden(y > last && y > 120)
-      last = y
+    const measure = () => {
       // Progress through the chapter text itself (not the page): 0 when its top reaches the foot of the screen, 1
       // when its end does. Only the minute count is state, so this re-renders once a minute, not on every scroll.
       const body = document.querySelector('.reading-body')
@@ -103,18 +106,35 @@ export function ReaderFrame({
         setLeft(minutesLeft(wordCount, r.height > 0 ? (window.innerHeight - r.top) / r.height : 0))
       }
     }
-    on()
-    window.addEventListener('scroll', on, { passive: true })
-    window.addEventListener('resize', on)
+    // Only scroll decides the head's visibility: phones fire `resize` as the URL bar collapses mid-read, and that
+    // must not bring the head back.
+    const onScroll = () => {
+      const y = window.scrollY
+      setHidden(y > last && y > 120)
+      last = y
+      measure()
+    }
+    measure()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', measure)
     return () => {
-      window.removeEventListener('scroll', on)
-      window.removeEventListener('resize', on)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', measure)
     }
   }, [wordCount])
   // ← / → turn the chapter, unless the reader is typing or a modifier is held (browser back/forward, word-jump).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || inField(e.target)) return
+      if (
+        e.repeat ||
+        e.defaultPrevented ||
+        e.altKey ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.shiftKey ||
+        inField(e.target)
+      )
+        return
       const href = e.key === 'ArrowRight' ? nextHref : e.key === 'ArrowLeft' ? prevHref : null
       if (href) router.push(href)
     }
@@ -130,9 +150,16 @@ export function ReaderFrame({
       data-face={prefs.face}
       data-leading={prefs.leading}
       data-margin-comments={prefs.marginComments}
+      // A tap on the text brings the head back; links, controls and a text selection keep their own meaning.
+      onClick={(e) => {
+        if (hidden && !isInteractive(e.target) && window.getSelection()?.isCollapsed !== false)
+          setHidden(false)
+      }}
     >
       <PrefsContext.Provider value={{ prefs, set }}>
         <header
+          // Tabbing into a hidden head must show it, or focus would land on controls you cannot see.
+          onFocus={() => setHidden(false)}
           className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 ${hidden ? '-translate-y-full' : ''}`}
         >
           <div className="mx-auto flex h-12 max-w-[72ch] items-center gap-1 px-2 text-[13px]">
