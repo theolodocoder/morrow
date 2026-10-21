@@ -1,9 +1,13 @@
+import type { AvatarConfig } from '@morrow/contracts'
 import { presence } from '@morrow/tokens'
 
 export interface PresenceUser {
   id: string
   name: string
   color: string
+  /** their profile face, so others see who's here the way their profile shows them */
+  avatarSeed?: string
+  avatar?: AvatarConfig | null
 }
 
 function hash(s: string) {
@@ -17,11 +21,3 @@ export function presenceColor(userId: string, workId: string, theme: 'light' | '
   const palette = presence[theme]
   return palette[hash(`${workId}:${userId}`) % palette.length]!
 }
-
-export const initials = (name: string) =>
-  name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('') || '?'

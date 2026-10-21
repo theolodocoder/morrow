@@ -315,7 +315,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
         },
       }))
       // Shared with collaborators through awareness: never persisted, never logged (architecture §8).
-      provider.setAwarenessField('user', { id: me.id, name: me.name, color: me.color })
+      provider.setAwarenessField('user', me)
       setCollab({
         doc,
         provider,
@@ -355,7 +355,7 @@ export function useCollab(documentId: string, collabUrl: string, me: PresenceUse
       setSynced(false)
       setStatus('connecting')
     }
-  }, [documentId, collabUrl, generation, me.id, me.name, me.color])
+  }, [documentId, collabUrl, generation, me])
 
   // Stable identity between renders that change nothing, so effects depending on it don't re-run (and refetch).
   return useMemo(

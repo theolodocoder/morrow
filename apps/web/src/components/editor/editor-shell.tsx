@@ -20,7 +20,7 @@ import {
 import { useFeedbackUnread } from './use-feedback-unread'
 import { FeedbackDialog } from '@/components/feedback-dialog'
 import { useEffect, useState } from 'react'
-import type { Branch, Chapter, Work } from '@morrow/contracts'
+import type { AvatarConfig, Branch, Chapter, Work } from '@morrow/contracts'
 import { BranchSwitcher } from './branch-switcher'
 import { WorkSettingsDialog } from './work-settings-dialog'
 import { CoverDialog } from './cover-dialog'
@@ -63,11 +63,19 @@ export function EditorShell({
   chapters: Chapter[]
   chapter: Chapter
   collabUrl: string
-  user: { id: string; name: string }
+  user: { id: string; name: string; avatarSeed: string; avatar: AvatarConfig | null }
 }) {
+  // Keyed by value: a router refresh hands over a new avatar object, and a new `me` would reconnect collab.
+  const avatarKey = JSON.stringify(user.avatar ?? null)
   const me: PresenceUser = useMemo(
-    () => ({ id: user.id, name: user.name, color: presenceColor(user.id, work.id) }),
-    [user.id, user.name, work.id],
+    () => ({
+      id: user.id,
+      name: user.name,
+      color: presenceColor(user.id, work.id),
+      avatarSeed: user.avatarSeed,
+      avatar: JSON.parse(avatarKey) as AvatarConfig | null,
+    }),
+    [user.id, user.name, user.avatarSeed, avatarKey, work.id],
   )
   const collab = useCollab(chapter.documentId, collabUrl, me)
   const router = useRouter()

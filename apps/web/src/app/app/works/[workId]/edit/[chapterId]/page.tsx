@@ -44,7 +44,7 @@ export default async function ChapterPage({ params }: Params) {
       chapters={chapters}
       chapter={chapter}
       collabUrl={process.env.COLLAB_PUBLIC_URL ?? 'ws://localhost:4001'}
-      user={{ id: user.id, name: user.name }}
+      user={{ id: user.id, name: user.name, avatarSeed: user.avatarSeed, avatar: user.avatar }}
     />
   )
 }

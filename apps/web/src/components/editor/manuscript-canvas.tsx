@@ -84,7 +84,7 @@ export function ManuscriptCanvas({
         // Remote carets (design system §11): a 2px caret plus a name flag that fades when the person pauses.
         CollaborationCaret.configure({
           provider: collab.provider,
-          user: { id: me.id, name: me.name, color: me.color },
+          user: me, // the same awareness `user` field useCollab sets: send it whole, or the avatar is dropped
           render: renderCaret,
         }),
       ],
