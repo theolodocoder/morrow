@@ -4,20 +4,27 @@ import { connection } from 'next/server'
 import './globals.css'
 import { Toaster } from '@/components/ui/toast'
 
-// Self-hosted at build time by next/font: no runtime requests to Google.
+// Self-hosted at build time by next/font: no runtime requests to Google. `subsets` only picks what is *preloaded*:
+// every subset's @font-face still ships, so latin-ext letters load on demand. Preloading only latin (and not the mono
+// face, used for small labels) cut the first visit's font bytes on a phone from 12 files to 5.
 const display = Instrument_Serif({
-  subsets: ['latin', 'latin-ext'],
+  subsets: ['latin'],
   weight: '400',
   style: ['normal', 'italic'],
   variable: '--nf-display',
 })
 const manuscript = Literata({
-  subsets: ['latin', 'latin-ext'],
+  subsets: ['latin'],
   variable: '--nf-manuscript',
   style: ['normal', 'italic'],
 })
-const ui = DM_Sans({ subsets: ['latin', 'latin-ext'], variable: '--nf-ui' })
-const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--nf-mono' })
+const ui = DM_Sans({ subsets: ['latin'], variable: '--nf-ui' })
+const mono = IBM_Plex_Mono({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--nf-mono',
+  preload: false,
+})
 
 export const metadata: Metadata = {
   // Absolute links in share cards and the sitemap: the public address, set per environment.
