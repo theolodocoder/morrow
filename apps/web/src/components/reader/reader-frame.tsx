@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { minutesLeft } from '@morrow/domain'
 import { Button as AriaButton, Dialog, DialogTrigger, Popover } from 'react-aria-components'
 import { Sheet } from '@/components/ui/sheet'
@@ -84,6 +84,7 @@ export function ReaderFrame({
   const [hidden, setHidden] = useState(false)
   const [left, setLeft] = useState<number | null>(null)
   const router = useRouter()
+  const headRef = useRef<HTMLElement>(null)
   useEffect(() => setPrefs(load()), [])
   const set = (p: Partial<Prefs>) => {
     const next = { ...prefs, ...p }
@@ -110,7 +111,8 @@ export function ReaderFrame({
     // must not bring the head back.
     const onScroll = () => {
       const y = window.scrollY
-      setHidden(y > last && y > 120)
+      // Never hide the head while focus is inside it: that would strand a keyboard user on an invisible control.
+      setHidden(y > last && y > 120 && !headRef.current?.contains(document.activeElement))
       last = y
       measure()
     }
@@ -158,6 +160,7 @@ export function ReaderFrame({
     >
       <PrefsContext.Provider value={{ prefs, set }}>
         <header
+          ref={headRef}
           // Tabbing into a hidden head must show it, or focus would land on controls you cannot see.
           onFocus={() => setHidden(false)}
           className={`sticky top-0 z-30 border-b border-subtle bg-canvas/95 backdrop-blur-sm transition-transform duration-200 ${hidden ? '-translate-y-full' : ''}`}
