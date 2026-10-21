@@ -3,10 +3,11 @@
 # really sees, so the API's TRUSTED_PROXIES can trust the compose network without trusting the internet.
 {
 	servers {
+		# HTTP/3 would need 443/udp published and opened in the VCN; TCP only keeps one firewall rule.
+		protocols h1 h2
 		timeouts {
 			read_header 10s
-			read_body 30s
-			# no write timeout: it would cut long-lived WebSockets
+			# no read_body or write timeout: either would cut long-lived collab WebSockets
 			idle 5m
 		}
 	}

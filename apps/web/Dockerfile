@@ -2,7 +2,7 @@
 # A Next.js app of the workspace. Build from the repo root:
 #   docker build -f apps/web/Dockerfile .                     (the reader/writer app)
 #   docker build -f apps/web/Dockerfile --build-arg APP=admin .   (the staff console)
-FROM node:24-bookworm-slim AS base
+FROM node:24.22.0-bookworm-slim AS base
 ENV CI=true COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 WORKDIR /app
 # pnpm at the version pinned in package.json's packageManager
@@ -34,7 +34,7 @@ ARG APP=web
 RUN --mount=type=cache,id=morrow-pnpm,target=/pnpm-store \
     pnpm install --frozen-lockfile --prod --filter "@morrow/$APP..." --store-dir /pnpm-store
 
-FROM node:24-bookworm-slim
+FROM node:24.22.0-bookworm-slim
 ARG APP=web
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=prod-deps /app /app

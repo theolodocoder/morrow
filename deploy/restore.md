@@ -17,8 +17,8 @@ Stop everything that writes, restore into a clean database, then start again. Co
 and flushes them on shutdown, so stop it before you restore, never after.
 
 ```sh
-c stop web collab api
-c exec -T postgres dropdb -U morrow --if-exists morrow
+c stop web collab api admin
+c exec -T postgres dropdb -U morrow --if-exists --force morrow
 c exec -T postgres createdb -U morrow morrow
 gunzip -c /tmp/morrow.dump.gz | c exec -T postgres pg_restore -U morrow -d morrow --no-owner --exit-on-error
 c up -d --wait            # migrate re-runs (a no-op unless the dump is older than the code), then api, collab, web

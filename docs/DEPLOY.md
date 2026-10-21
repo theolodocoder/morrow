@@ -29,27 +29,35 @@ monitor (UptimeRobot, StatusCake or Better Stack), and GitHub (already have it).
 1. Oracle console → Compute → Instances → Create. Image: **Canonical Ubuntu 24.04 (aarch64)**. Shape:
    **VM.Standard.A1.Flex**, **2 OCPU / 12 GB**. Boot volume **100 GB**. Add your SSH public key.
    If you get "Out of host capacity", retry later or try another availability domain. The home region can't be changed.
-2. Open the ports in **both** places (Oracle blocks them twice):
-   - VCN → Security Lists → default → Ingress: TCP **80** and **443** from `0.0.0.0/0`. Leave 22 as it is.
-   - On the VM (Oracle's Ubuntu image ships iptables rules that reject everything else):
-     ```sh
-     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-     sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-     sudo netfilter-persistent save
-     ```
-3. Install Docker and security updates:
+2. Open the ports. **The VCN security list is the real firewall**: VCN → Security Lists → default → Ingress:
+   TCP **80** and **443** from `0.0.0.0/0`. Leave 22 as it is. Nothing else should be open.
+   - Don't edit the VM's iptables for this. Ports published by Docker are DNATed through the `FORWARD` chain, which
+     Docker manages. The image's `INPUT` rules (and `ufw`) don't apply to them, in either direction: they don't
+     block them, and they don't protect them. So **never add `ports:` to a service without a `127.0.0.1:` prefix**
+     (the admin console does this right). Otherwise the service is on the internet, whatever ufw says.
+   - Never run `netfilter-persistent save` after Docker is installed. It would freeze Docker's dynamic rules into
+     `/etc/iptables/rules.v4`, and they'd clash on the next boot. If you need host firewall changes, make them
+     before installing Docker.
+   - After the first deploy, check from another machine that `https://<domain>` answers. If it doesn't,
+     `sudo iptables -L FORWARD -n --line-numbers` should show Docker's chains above Oracle's final `REJECT`.
+3. Add 4 GB of swap. It's a safety net for `next build` while the site is running:
+   ```sh
+   sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   ```
+4. Install Docker and security updates:
    ```sh
    curl -fsSL https://get.docker.com | sudo sh
    sudo usermod -aG docker $USER            # log out and back in
    sudo apt-get install -y unattended-upgrades rclone && sudo dpkg-reconfigure -plow unattended-upgrades
    ```
    Container logs rotate already (10 MB × 5 per service, set in the compose file).
-4. Oracle may reclaim a VM that stays idle (CPU, network and memory all under 20% for 7 days). Real traffic avoids
+5. Oracle may reclaim a VM that stays idle (CPU, network and memory all under 20% for 7 days). Real traffic avoids
    that. An account unused for 30 days can be closed, so log in now and then.
 
 ## 3. Free domain and DNS
 
-1. Register a free name at DigitalPlat (e.g. `morrow.dpdns.org`; sign in with GitHub). In parallel, apply for an
+1. Register a free name at DigitalPlat (a `<name>.dpdns.org` subdomain; sign in with GitHub). In parallel, apply for an
    `eu.org` name as the long-term home. Approval takes weeks to months; switching later is one env change plus a
    rebuild.
 2. Add the domain to Cloudflare (free plan) and set the nameservers DigitalPlat shows to Cloudflare's.
@@ -65,15 +73,21 @@ Once it shows verified, create an API key (sending access only) and set `RESEND_
 `EMAIL_FROM="Morrow <hello@<domain>>"`. The free plan allows 3,000 emails a month, 100 a day. Without a key,
 Morrow sends no email, and invitations still work by link.
 
-## 5. Voice rooms: TURN (Cloudflare Realtime)
+## 5. Voice rooms: STUN now, TURN later
 
-Across the internet, voice needs a TURN relay. Cloudflare dashboard → Realtime → TURN → create a TURN key, then
-generate credentials with its API (`POST https://rtc.live.cloudflare.com/v1/turn/keys/<key id>/credentials/generate`,
-body `{"ttl": <seconds>}`). Put the returned `iceServers` JSON into `NEXT_PUBLIC_ICE_SERVERS` on one line.
-The value is **read when the web image is built**, so rebuild after any change (`c up -d --build`). The
-credentials expire after their TTL, so pick a long one and note the date: when they expire, voice falls back to
-direct connections only. (Follow-up: have the API mint short-lived TURN credentials per room.) Voice rooms are
-peer to peer, so each room holds at most 8 speakers.
+Voice rooms are peer to peer (at most 8 speakers). The template's default,
+`NEXT_PUBLIC_ICE_SERVERS=[{"urls":"stun:stun.cloudflare.com:3478"}]`, uses Cloudflare's free STUN server. That's
+enough for most home and office networks. Peers behind strict NATs (some mobile carriers, corporate networks) need
+a TURN relay, and they can't join voice until we add one.
+
+**Don't put TURN credentials in `NEXT_PUBLIC_ICE_SERVERS`.** The value is inlined into public JavaScript when the web
+image is built. Anyone could copy the credentials and relay their own traffic through our TURN quota. Cloudflare
+Realtime TURN credentials also expire, and voice would quietly break when they did.
+
+The follow-up (not built yet): a signed-in, rate-limited `POST /api/v1/voice/ice-servers` that calls Cloudflare's
+`POST https://rtc.live.cloudflare.com/v1/turn/keys/<key id>/credentials/generate` server-side with a ~4 h TTL. The
+TURN key id and API token stay in the API's env, and the browser fetches fresh `iceServers` when it joins a room. Until
+then, any change to `NEXT_PUBLIC_ICE_SERVERS` needs a rebuild (`c up -d --build`).
 
 ## 6. First deploy
 
@@ -97,12 +111,16 @@ an SSH tunnel with `ssh -L 3002:127.0.0.1:3002 <vm>`, then go to http://localhos
 
 ### Later deploys
 
-GitHub → Actions → **deploy** → Run workflow → the ref. It SSHes in, checks out the ref, runs
-`up -d --build --wait`, prunes old images, then checks `https://<domain>/`, `/api/auth/ok` (web → api) and
+GitHub → Actions → **deploy** → Run workflow → the ref. It SSHes in and checks out the ref. If backups are
+configured, it takes a fresh dump (`deploy/backup.sh`) before migrations can run. Then it runs `up -d --build --wait`,
+prunes old images, then checks `https://<domain>/`, `/api/auth/ok` (web → api) and
 `https://collab.<domain>/healthz` from outside. One-time setup: create a deploy key pair, put the public half in
 the VM user's `~/.ssh/authorized_keys`, and add secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`,
 `DEPLOY_KNOWN_HOSTS` (`ssh-keyscan -t ed25519 <ip>`, checked against the VM's real key) and the variable
 `MORROW_DOMAIN` (in the `production` environment, where you can also require approval).
+
+Images are built on the VM itself, which keeps the setup simple but takes CPU from the live site for a few
+minutes. Later: build arm64 images in CI and push them to GHCR, so the VM only pulls.
 
 Deploy off-peak. Restarting collab disconnects live editors for a few seconds. Collab flushes every open
 document on shutdown, editors reconnect and resync, and nothing is lost.
@@ -118,6 +136,10 @@ Each night `backup.sh` dumps the database, checks that the dump is readable, upl
 older than 14 days. It reads its `RCLONE_CONFIG_R2_*` / `BACKUP_*` settings from `.env.production` (create an
 R2 bucket and an R2 API token scoped to it). Run it once by hand and check that the file shows up. Also turn on
 Oracle's boot-volume backups (5 are free) as a second layer.
+
+**Get alerted when backups stop.** A failing cron job is silent. Create a free check at healthchecks.io (period
+1 day, grace 2 hours) and set its URL as `BACKUP_PING_URL`. The script pings it after every good backup and pings
+`<url>/fail` when a backup fails. If neither arrives, healthchecks.io emails you.
 
 Once a month, follow **`deploy/restore.md`**: restore the newest dump into a scratch database and compare the
 counts with production.

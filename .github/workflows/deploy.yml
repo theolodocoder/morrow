@@ -36,9 +36,9 @@ jobs:
     steps:
       - name: Check inputs
         run: |
-          # The ref and path end up in a remote shell command: allow only plain names.
-          [[ "$REF" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "bad ref: $REF"; exit 1; }
-          [[ "$DEPLOY_PATH" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "bad DEPLOY_PATH"; exit 1; }
+          # The ref and path end up in a remote shell command: allow only plain names, never an option ("-...").
+          [[ "$REF" =~ ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$ ]] || { echo "bad ref: $REF"; exit 1; }
+          [[ "$DEPLOY_PATH" =~ ^[A-Za-z0-9._/][A-Za-z0-9._/-]*$ ]] || { echo "bad DEPLOY_PATH"; exit 1; }
           [[ -n "$MORROW_DOMAIN" ]] || { echo "set the MORROW_DOMAIN repository variable"; exit 1; }
 
       - name: SSH key
@@ -61,6 +61,12 @@ jobs:
              git fetch --prune origin '$REF'
              git checkout --force --detach FETCH_HEAD
              git log -1 --format='deploying %h %s'
+             # A fresh dump before migrations run; skipped until backups are configured (and on the very first deploy).
+             if grep -q '^BACKUP_TARGET=.' .env.production && [ -n \"\$(docker compose --env-file .env.production -f docker-compose.prod.yml ps -q --status running postgres)\" ]; then
+               deploy/backup.sh
+             else
+               echo 'no pre-deploy dump: backups not configured or postgres not running yet'
+             fi
              docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build --remove-orphans --wait --wait-timeout 600
              docker image prune -f
              docker builder prune -f --filter until=168h"

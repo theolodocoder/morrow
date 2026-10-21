@@ -7,8 +7,10 @@
 **/coverage
 .git
 .superpowers
-.env*
-!.env.example
+# dev secrets anywhere in the tree (apps/web/.env.local …); templates only
+**/.env*
+!**/.env.example
+!**/.env.*.example
 docs
 **/*.log
 **/.DS_Store
