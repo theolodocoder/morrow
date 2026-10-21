@@ -1,5 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { continueFrom } from '@morrow/domain'
+import { routes } from '@/lib/routes'
 import { loadReadingPositions, useReadingPosition } from './use-reading-position'
 
 /** A hairline that fills as the reader moves through the chapter; remembers the paragraph for "continue reading". */
@@ -35,32 +38,81 @@ export function ReadingProgress({
   )
 }
 
-/** On the work page: a link back to where this reader left off, if they have started. */
-export function ContinueReading({
-  publicPath,
-  chapters,
-}: {
-  publicPath: string
-  chapters: { slug: string; title: string }[]
-}) {
-  const [last, setLast] = useState<{ slug: string; title: string } | null>(null)
+type WorkProgress = Awaited<ReturnType<typeof loadReadingPositions>>
+/** the button and the contents mount together: one request serves both */
+const loading = new Map<string, Promise<WorkProgress>>()
+
+/** On the work page: this reader's place in each chapter, once known (null while loading, and on the server). */
+export function useWorkProgress(publicPath: string, liveSlugs: string[]): WorkProgress | null {
+  const [progress, setProgress] = useState<WorkProgress | null>(null)
+  // a stable dependency: the page hands over a new array each render
+  const live = liveSlugs.join(' ')
   useEffect(() => {
     let alive = true
-    void loadReadingPositions(
-      publicPath,
-      chapters.map((c) => c.slug),
-    ).then(({ last }) => alive && setLast(chapters.find((c) => c.slug === last) ?? null))
+    let p = loading.get(publicPath)
+    if (!p) {
+      p = loadReadingPositions(publicPath, live.split(' ')).finally(() => loading.delete(publicPath))
+      loading.set(publicPath, p)
+    }
+    void p.then((r) => alive && setProgress(r))
     return () => {
       alive = false
     }
-  }, [publicPath, chapters])
-  if (!last) return null
+  }, [publicPath, live])
+  return progress
+}
+
+type Summary = { slug: string; title: string }
+type Version = { chapters: Summary[] }
+/** every chapter readers can open: positions anywhere else are stale */
+export const liveSlugsOf = (chapters: Summary[], versions: Version[]) =>
+  [...chapters, ...versions.flatMap((v) => v.chapters)].map((c) => c.slug)
+/** main's chapters, then each version's own, for Continue to follow the path the reader was on */
+export const runsOf = (chapters: Summary[], versions: Version[]) => [
+  chapters,
+  ...versions.map((v) => v.chapters),
+]
+
+/**
+ * The work page's one big button: Start reading, or Continue to the chapter read last (its paragraph comes back on
+ * opening). Signed-out readers learn their place is kept on this device only.
+ */
+export function StartReading({
+  publicPath,
+  chapters,
+  versions,
+}: {
+  publicPath: string
+  chapters: Summary[]
+  versions: Version[]
+}) {
+  const progress = useWorkProgress(publicPath, liveSlugsOf(chapters, versions))
+  const at = progress && continueFrom(runsOf(chapters, versions), progress.items, progress.last)
+  const target = at?.chapter ?? chapters[0]
+  if (!target) return null
   return (
-    <a
-      href={`/works/${publicPath}/read/${last.slug}`}
-      className="inline-flex h-10 items-center rounded-full border border-control px-4 text-sm text-primary hover:bg-hover"
-    >
-      Continue: {last.title}
-    </a>
+    <div className="flex flex-col gap-2.5">
+      <Link
+        href={routes.readChapter(publicPath, target.slug)}
+        className="press flex min-h-12 w-full items-center justify-center rounded-full bg-action px-6 py-2.5 text-center font-ui text-[15px] font-semibold text-action-fg transition-colors hover:bg-action-hover sm:w-auto sm:self-start"
+      >
+        {at ? `Continue · ${at.chapter.title} · ${at.percent}%` : 'Start reading'}
+      </Link>
+      {progress?.signedIn !== true && (
+        // Kept in the layout until the answer comes, so the page below doesn't jump for most first-time readers.
+        <p
+          className={`text-center font-ui text-[13px] text-secondary sm:text-left ${progress ? '' : 'invisible'}`}
+        >
+          Read without an account.{' '}
+          <Link
+            href={`/sign-in?next=${encodeURIComponent(routes.publicWork(publicPath))}`}
+            className="rounded-sm text-primary underline underline-offset-2"
+          >
+            Sign in
+          </Link>{' '}
+          to keep your place on every device.
+        </p>
+      )}
+    </div>
   )
 }

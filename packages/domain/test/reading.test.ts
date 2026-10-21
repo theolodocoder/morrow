@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { aheadOf, creditLine, mergePositions, minutesFor, minutesLeft, sectionLabel } from '../src/index.ts'
+import {
+  aheadOf,
+  continueFrom,
+  creditLine,
+  mergePositions,
+  minutesFor,
+  minutesLeft,
+  sectionLabel,
+} from '../src/index.ts'
 
 describe('sectionLabel', () => {
   it('names fiction chapters in words', () => {
@@ -122,5 +130,28 @@ describe('aheadOf', () => {
   it('sends nothing once the account has caught up', () => {
     const local = [{ chapterSlug: slugs[0]!, blockId: 'a', percent: 30 }]
     expect(aheadOf(local, [{ chapterSlug: slugs[0]!, blockId: 'b', percent: 30 }], slugs, 49)).toEqual([])
+  })
+})
+
+describe('continueFrom', () => {
+  const main = [{ slug: 'a' }, { slug: 'b' }, { slug: 'c' }]
+  const version = [{ slug: 'v1' }, { slug: 'v2' }]
+  const at = (chapterSlug: string, percent: number) => ({ chapterSlug, blockId: null, percent })
+  it('is null before anything is read, or when the last chapter is gone', () => {
+    expect(continueFrom([main], [], null)).toBeNull()
+    expect(continueFrom([main], [at('x', 40)], 'x')).toBeNull()
+  })
+  it('goes back to a part-read chapter with its percent', () => {
+    expect(continueFrom([main], [at('a', 100), at('b', 40)], 'b')).toEqual({ chapter: main[1], percent: 40 })
+  })
+  it('moves on from a finished chapter, along the version when it was one', () => {
+    expect(continueFrom([main], [at('b', 95)], 'b')).toEqual({ chapter: main[2], percent: 0 })
+    expect(continueFrom([main, version], [at('v1', 100), at('v2', 30)], 'v1')).toEqual({
+      chapter: version[1],
+      percent: 30,
+    })
+  })
+  it('stays on the last chapter once it is finished', () => {
+    expect(continueFrom([main], [at('c', 100)], 'c')).toEqual({ chapter: main[2], percent: 100 })
   })
 })

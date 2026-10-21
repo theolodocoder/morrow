@@ -124,3 +124,26 @@ export function aheadOf(
     .sort((a, b) => b.percent - a.percent)
     .slice(0, limit)
 }
+
+/** At or past this a chapter counts as read: the last lines often sit above the bottom of the screen. */
+export const READ_PERCENT = 95
+
+/**
+ * Where the front page's Continue goes: the chapter read last, or the one after it when that one is finished (the
+ * reader stopped at its end). `runs` are the ways through the work (main's chapters, then each version's own), so
+ * "the one after" follows the reader's path. Null until there is a place to go back to.
+ */
+export function continueFrom<C extends { slug: string }>(
+  runs: readonly (readonly C[])[],
+  positions: readonly Position[],
+  last: string | null,
+): { chapter: C; percent: number } | null {
+  const pct = (slug: string) => positions.find((p) => p.chapterSlug === slug)?.percent ?? 0
+  for (const run of runs) {
+    const i = run.findIndex((c) => c.slug === last)
+    if (i < 0) continue
+    const chapter = pct(run[i]!.slug) >= READ_PERCENT ? (run[i + 1] ?? run[i]!) : run[i]!
+    return { chapter, percent: pct(chapter.slug) }
+  }
+  return null
+}

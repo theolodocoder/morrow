@@ -69,19 +69,20 @@ function sendServer(publicPath: string, items: Position[]): Promise<boolean> {
 /**
  * Read-only, for the work's front page: how far this reader got in each chapter and the one to continue. The account's
  * (merged with this device's) when signed in, this device's otherwise. `liveSlugs` are every chapter readers can open,
- * versions' included; positions for anything else are dropped, here and from the device.
+ * versions' included; positions for anything else are dropped, here and from the device. `signedIn` is whether the
+ * account answered (an outage reads as signed out: the device's places are all the page has then too).
  */
 export async function loadReadingPositions(
   publicPath: string,
   liveSlugs: string[],
-): Promise<{ items: Position[]; last: string | null }> {
+): Promise<{ items: Position[]; last: string | null; signedIn: boolean }> {
   const local = readLocal(publicPath)
   const server = await fetchServer(publicPath)
   const items = mergePositions(local.items, server?.items ?? [], liveSlugs)
   const last = [server?.last, local.last].find((s): s is string => !!s && liveSlugs.includes(s)) ?? null
   // prune the device's stale entries, without leaving an empty record for every work page visited
   if (local.items.length || local.last) writeLocal(publicPath, { last, items })
-  return { items, last }
+  return { items, last, signedIn: server !== null }
 }
 
 /**

@@ -300,11 +300,14 @@ export function CommentThread({
 export function ReaderComments({
   publicPath,
   anchor,
+  initial,
   onChange,
 }: {
   publicPath: string
   /** a paragraph's thread instead of the work's comments */
   anchor?: Required<Anchor>
+  /** the work's thread, first page, fetched by the page (which shows its count beside the like button too) */
+  initial?: CommentList | null
   onChange?: () => void
 }) {
   return anchor ? (
@@ -321,6 +324,7 @@ export function ReaderComments({
     <section id="comments" aria-labelledby="comments-heading" className="scroll-mt-20">
       <CommentThread
         publicPath={publicPath}
+        initial={initial}
         label="Add a comment"
         empty="No comments yet. Be the first to say what it made you feel."
         heading={(list) => (
