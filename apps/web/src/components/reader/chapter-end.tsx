@@ -38,11 +38,11 @@ export function ChapterEnd({
   const { next, alternates } = chapter
   // A single-piece work has no "End of …" heading, so its own headings step up to keep the outline unbroken.
   const H = label ? 'h3' : 'h2'
+  // On a version's chapter the reader's path is main's shared chapters plus the version's own, not main's length.
+  const version = chapter.version ? work.versions.find((v) => v.slug === chapter.version!.slug) : undefined
+  const total = version ? version.afterChapter + version.chapters.length : work.chapters.length
   const nextMeta = next
-    ? [
-        sectionLabel(work.category, chapter.index + 1, work.chapters.length),
-        `${minutesFor(next.wordCount)} min`,
-      ]
+    ? [sectionLabel(work.category, chapter.index + 1, total), `${minutesFor(next.wordCount)} min`]
         .filter(Boolean)
         .join(' · ')
     : ''
@@ -119,6 +119,9 @@ export function ChapterEnd({
             Keep reading
           </Link>
         </div>
+      ) : chapter.version ? (
+        // A version that has ended says so, rather than promising the main story's next chapter or its ending.
+        <VersionEnd work={work} name={chapter.version.name} version={version} H={H} />
       ) : work.completed ? (
         <TheEnd work={work} H={H} />
       ) : (
@@ -129,6 +132,52 @@ export function ChapterEnd({
         </div>
       )}
     </section>
+  )
+}
+
+/** The last chapter of an alternate version: whose version it was, and the way back to the main story. */
+function VersionEnd({
+  work,
+  name,
+  version,
+  H,
+}: {
+  work: PublicWork
+  name: string
+  version: PublicWork['versions'][number] | undefined
+  H: 'h2' | 'h3'
+}) {
+  // `afterChapter` is 1-based, so it is also the 0-based index of the main chapter the version replaced.
+  const main = version ? work.chapters[version.afterChapter] : undefined
+  return (
+    <div className="flex flex-col items-center gap-3 text-center font-ui">
+      <H className="font-display text-[32px] leading-tight text-primary">End of “{name}”</H>
+      {version && (
+        <p className="flex items-center gap-2 text-[14px] text-secondary">
+          <Avatar
+            name={version.author.displayName}
+            seed={version.author.avatarSeed}
+            avatar={version.author.avatar}
+            size={22}
+          />
+          {version.author.displayName}’s version
+        </p>
+      )}
+      {main && (
+        <Link
+          href={routes.readChapter(work.publicPath, main.slug)}
+          className="mt-1 inline-flex min-h-10 items-center justify-center rounded-full bg-action px-5 py-2 text-[15px] font-medium text-action-fg transition-colors hover:bg-action-hover"
+        >
+          Read the main story from chapter {version!.afterChapter + 1}
+        </Link>
+      )}
+      <Link
+        href={`${routes.publicWork(work.publicPath)}#contents`}
+        className="rounded-sm text-[14px] text-accent underline underline-offset-2"
+      >
+        Back to contents
+      </Link>
+    </div>
   )
 }
 
