@@ -41,7 +41,10 @@ export function GoalRing() {
   }
 
   if (!stats) return null
-  const max = Math.max(goal, ...stats.week.map((d) => d.words), 1)
+  // Today's bar draws the live count, so it is part of the scale too, or it outgrows the chart.
+  const week = stats.week.map((d, i) => (i === 6 ? today : d.words))
+  const max = Math.max(goal, ...week, 1)
+  const best = Math.max(stats.best, streak)
   return (
     <DialogTrigger>
       <AriaButton
@@ -91,7 +94,7 @@ export function GoalRing() {
           </div>
           <div aria-hidden="true" className="flex h-16 items-end gap-1.5">
             {stats.week.map((d, i) => {
-              const words = i === 6 ? today : d.words
+              const words = week[i]!
               return (
                 <div key={d.day} className="flex flex-1 flex-col items-center gap-1">
                   <div
@@ -106,7 +109,7 @@ export function GoalRing() {
             })}
           </div>
           <p className="text-[12px] text-tertiary">
-            Best streak: {stats.best} {stats.best === 1 ? 'day' : 'days'}. Any words count.
+            Best streak: {best} {best === 1 ? 'day' : 'days'}. Any words count.
           </p>
           <div>
             <p className="mb-1.5 text-[12px] font-medium text-primary">Daily goal</p>
