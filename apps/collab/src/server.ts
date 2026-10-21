@@ -52,6 +52,8 @@ const handled = (): never => {
 }
 
 const AUTO_SNAPSHOT_INTERVAL_MS = 15 * 60_000
+/** How long a place stays held for a connection that passed the cap but never arrived (e.g. closed while loading). */
+const ADMISSION_HOLD_MS = 30_000
 
 export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
   const store = createDocumentStore(db)
@@ -62,6 +64,32 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
     string,
     { documentId: string; workId: string; userId: string; startedAt: Date; updates: number }
   >()
+  /** Rooms whose "everyone left" snapshot is being taken: a room emptying at once fires it for every connection. */
+  const quietSnapshots = new Set<string>()
+
+  // Places taken between the cap check and Hocuspocus counting the connection. A cold room loads in between, so
+  // without them every connection in a burst sees the same empty room and all are let in.
+  const admitting = new Map<string, number>()
+  const held = new Map<string, (() => void)[]>()
+  function holdPlace(documentName: string, socketId: string) {
+    const key = `${socketId}:${documentName}`
+    admitting.set(documentName, (admitting.get(documentName) ?? 0) + 1)
+    const release = () => {
+      clearTimeout(timer)
+      const list = held.get(key) ?? []
+      const i = list.indexOf(release)
+      if (i < 0) return
+      list.splice(i, 1)
+      if (!list.length) held.delete(key)
+      const n = admitting.get(documentName)! - 1
+      if (n > 0) admitting.set(documentName, n)
+      else admitting.delete(documentName)
+    }
+    const timer = setTimeout(release, ADMISSION_HOLD_MS).unref()
+    held.set(key, [...(held.get(key) ?? []), release])
+  }
+  const placeTaken = (documentName: string, socketId: string) =>
+    held.get(`${socketId}:${documentName}`)?.[0]?.()
 
   /** What this user may do on this document right now: 'edit', 'read' or 'none'. */
   async function currentMode(documentId: string, userId: string): Promise<'edit' | 'read' | 'none'> {
@@ -124,7 +152,7 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
       }
     },
 
-    async onAuthenticate({ token, documentName, connectionConfig, instance }) {
+    async onAuthenticate({ token, documentName, connectionConfig, instance, socketId }) {
       let parsed: { ticket?: unknown; schemaVersion?: unknown }
       try {
         parsed = JSON.parse(token)
@@ -149,8 +177,12 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
       if (!row || access === 'none') throw reject('access_denied')
       const mayEdit = access === 'edit' && (await loadRestriction(db, userId)) !== 'suspended'
 
-      const open = instance.documents.get(documentName)?.getConnectionsCount() ?? 0
+      // Count and take the place with no await in between, so concurrent joins can't share the last free place.
+      const open =
+        (instance.documents.get(documentName)?.getConnectionsCount() ?? 0) +
+        (admitting.get(documentName) ?? 0)
       if (open >= env.ROOM_MAX_CONNECTIONS) throw reject('room_full')
+      holdPlace(documentName, socketId)
 
       const readOnly = !(mayEdit && mode === 'edit')
       connectionConfig.readOnly = readOnly // enforced by the server: updates from read-only connections are dropped
@@ -158,6 +190,7 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
     },
 
     async connected({ connection, documentName, context, socketId }) {
+      placeTaken(documentName, socketId) // Hocuspocus counts this connection now
       // Everyone on the chapter can see who's in its voice room (and join it).
       if (context?.userId)
         await voice.watch(documentName, socketId, context.userId, (m) => connection.sendStateless(m))
@@ -272,10 +305,14 @@ export async function startCollab(env: CollabEnv, db: Database, log: Logger) {
           .values({ ...session, endedAt: new Date(), updateCount: session.updates })
           .catch((err) => log.error({ ev: 'edit_session_failed', doc: documentName, err: String(err) }))
       }
-      if (clientsCount > 0 || !context?.workId || context.readOnly) return
+      // clientsCount is read after each connection's pending messages, so in a busy room that empties at once many
+      // disconnects see 0. One snapshot covers them all; the store also refuses duplicates of the same state.
+      if (clientsCount > 0 || !context?.workId || context.readOnly || quietSnapshots.has(documentName)) return
+      quietSnapshots.add(documentName)
       await store
         .snapshot(documentName, context.workId, document, 'auto')
         .catch((err) => log.error({ ev: 'snapshot_failed', doc: documentName, err: String(err) }))
+        .finally(() => quietSnapshots.delete(documentName))
     },
 
     async afterUnloadDocument({ documentName }) {

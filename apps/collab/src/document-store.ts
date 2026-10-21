@@ -115,29 +115,37 @@ export function createDocumentStore(db: Database) {
     ) {
       const p = project(doc)
       const contentHash = createHash('sha256').update(JSON.stringify(p.contentJson)).digest('hex')
-      const [last] = await db
-        .select({ contentHash: documentSnapshots.contentHash })
-        .from(documentSnapshots)
-        .where(eq(documentSnapshots.documentId, documentId))
-        .orderBy(sql`${documentSnapshots.createdAt} desc`)
-        .limit(1)
-      // Automatic snapshots skip unchanged content; a writer's explicit "save version" always records.
-      if (reason === 'auto' && last?.contentHash === contentHash) return null
-      const [row] = await db
-        .insert(documentSnapshots)
-        .values({
-          documentId,
-          workId,
-          state: Y.encodeStateAsUpdate(doc),
-          contentJson: p.contentJson,
-          contentHash,
-          wordCount: p.wordCount,
-          reason,
-          label: options.label ?? null,
-          createdBy: options.createdBy ?? null,
-        })
-        .returning()
-      return row!
+      const state = Y.encodeStateAsUpdate(doc)
+      return db.transaction(async (tx) => {
+        // One snapshot at a time per document, across collab instances: concurrent callers would otherwise all
+        // compare against the same latest snapshot and each record a duplicate (load test R3: 56 from one room).
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${documentId}, 0))`)
+        const [last] = await tx
+          .select({ contentHash: documentSnapshots.contentHash })
+          .from(documentSnapshots)
+          .where(eq(documentSnapshots.documentId, documentId))
+          .orderBy(sql`${documentSnapshots.createdAt} desc`)
+          .limit(1)
+        // Automatic snapshots skip unchanged content; a writer's explicit "save version" always records.
+        if (reason === 'auto' && last?.contentHash === contentHash) return null
+        const [row] = await tx
+          .insert(documentSnapshots)
+          .values({
+            documentId,
+            workId,
+            state,
+            contentJson: p.contentJson,
+            contentHash,
+            wordCount: p.wordCount,
+            reason,
+            label: options.label ?? null,
+            createdBy: options.createdBy ?? null,
+            // Insert time, not transaction start (spent waiting for the lock): "latest" must follow lock order.
+            createdAt: sql`clock_timestamp()`,
+          })
+          .returning()
+        return row!
+      })
     },
   }
 }

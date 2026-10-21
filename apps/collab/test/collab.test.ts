@@ -3,9 +3,10 @@ import { eq } from 'drizzle-orm'
 import WebSocket from 'ws'
 import { createDb, documentProjections, documentSnapshots, workMembers } from '@morrow/db'
 import { mintTicket, signInternal, INTERNAL_SIGNATURE_HEADER } from '@morrow/domain/signing'
-import type { XmlElement } from 'yjs'
+import * as Y from 'yjs'
 import { SCHEMA_VERSION } from '@morrow/editor'
 import { startCollab } from '../src/server.ts'
+import { createDocumentStore } from '../src/document-store.ts'
 import { createLogger, silentLogger } from '../src/logger.ts'
 import { connect, env, freshDatabase, port, seedChapter, url, waitFor, writeParagraph } from './setup.ts'
 
@@ -93,7 +94,7 @@ describe('editing and persistence', () => {
         const ids = a.doc
           .getXmlFragment('default')
           .toArray()
-          .map((n) => (n as XmlElement).getAttribute('id'))
+          .map((n) => (n as Y.XmlElement).getAttribute('id'))
         return new Set(ids).size === 2
       },
       5000,
@@ -186,6 +187,32 @@ describe('authorization (ticket + database re-check, enforced on the server)', (
     await waitFor(() => b.events.authFailed.length > 0)
     expect(b.events.authFailed[0]).toBe('room_full')
   })
+
+  it('admits exactly the cap when a burst arrives at a room nobody has open yet', async () => {
+    const p = await start({ ROOM_MAX_CONNECTIONS: '5' })
+    const s = await seedChapter(db.db)
+    // Hold the room's first load (a big chapter, a slow database) while the whole burst authenticates.
+    const blocker = await db.pool.connect()
+    await blocker.query('begin; lock table document_states in access exclusive mode')
+    const burst = Array.from({ length: 12 }, () => track(connect(p, s.documentId, s.users.owner!)))
+    await new Promise((r) => setTimeout(r, 1000))
+    await blocker.query('commit')
+    blocker.release()
+    await waitFor(() => burst.every((c) => c.provider.isSynced || c.events.authFailed.length > 0), 10_000)
+    expect(burst.filter((c) => c.provider.isSynced)).toHaveLength(5)
+    expect(burst.flatMap((c) => c.events.authFailed)).toEqual(Array(7).fill('room_full'))
+  })
+
+  it('frees a place when a connection leaves', async () => {
+    const p = await start({ ROOM_MAX_CONNECTIONS: '1' })
+    const s = await seedChapter(db.db)
+    const a = connect(p, s.documentId, s.users.owner!)
+    await waitFor(() => a.provider.isSynced)
+    a.close()
+    const b = track(connect(p, s.documentId, s.users.owner!))
+    await waitFor(() => b.provider.isSynced || b.events.authFailed.length > 0)
+    expect(b.events.authFailed).toEqual([])
+  })
 })
 
 describe('snapshots', () => {
@@ -204,6 +231,42 @@ describe('snapshots', () => {
       5000,
       'auto snapshot',
     )
+  })
+
+  it('takes one automatic snapshot when everyone leaves at once', async () => {
+    // Re-checking access on every message keeps each connection mid-message (awaiting the database) as it closes,
+    // like a busy room: then every disconnect sees an empty room.
+    const p = await start({ ACCESS_RECHECK_MS: '0' })
+    const s = await seedChapter(db.db)
+    const room = Array.from({ length: 30 }, () => connect(p, s.documentId, s.users.owner!))
+    await waitFor(() => room.every((c) => c.provider.isSynced), 10_000)
+    room.forEach((c) => writeParagraph(c.doc, 'Before leaving.'))
+    await waitFor(async () => (await projection(s.documentId))?.wordCount === 60)
+    room.forEach((c) => {
+      c.provider.setAwarenessField('cursor', { at: 1 })
+      c.close()
+    })
+    const snapshots = () =>
+      db.db.select().from(documentSnapshots).where(eq(documentSnapshots.documentId, s.documentId))
+    await waitFor(async () => (await snapshots()).length > 0, 5000, 'auto snapshot')
+    await new Promise((r) => setTimeout(r, 1000)) // every disconnect has run its hook by now
+    expect(await snapshots()).toHaveLength(1)
+  })
+
+  it('records one automatic snapshot per state, even when asked concurrently', async () => {
+    const s = await seedChapter(db.db)
+    const doc = new Y.Doc()
+    writeParagraph(doc, 'Same words, many callers.')
+    const store = createDocumentStore(db.db)
+    const rows = await Promise.all(
+      Array.from({ length: 20 }, () => store.snapshot(s.documentId, s.workId, doc, 'auto')),
+    )
+    expect(rows.filter(Boolean)).toHaveLength(1)
+    const stored = await db.db
+      .select()
+      .from(documentSnapshots)
+      .where(eq(documentSnapshots.documentId, s.documentId))
+    expect(stored).toHaveLength(1)
   })
 
   it('creates a manual snapshot through the signed internal API, and refuses unsigned calls', async () => {
